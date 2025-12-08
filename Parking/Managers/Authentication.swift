@@ -283,4 +283,31 @@ class AuthenticationManager: ObservableObject {
                 .cornerRadius(8)
         }
     }
+    
+    // MARK: - Update Display Name
+    
+    func updateDisplayName(name: String) async throws {
+        guard let uid = currentUserUID else {
+            throw NSError(domain: "AuthError", code: -1, userInfo: [NSLocalizedDescriptionKey: "No user logged in"])
+        }
+        
+        isLoading = true
+        errorMessage = nil
+        
+        do {
+            // Update Firestore
+            try await db.collection("Users").document(uid).updateData([
+                "displayName": name
+            ])
+            
+            // Reload user data to refresh UI
+            loadUserData(uid: uid)
+            
+            isLoading = false
+        } catch {
+            isLoading = false
+            errorMessage = error.localizedDescription
+            throw error
+        }
+    }
 }

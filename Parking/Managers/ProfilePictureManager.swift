@@ -15,7 +15,7 @@ class ProfilePictureManager: ObservableObject {
     @Published var backgroundColor: String = "blue"
     
     static let shared = ProfilePictureManager()
-    private let db = Firestore.firestore()
+    private let db = Firestore.firestore(database: "parking")
     
     // 8 predefined gradient options
     let gradientOptions: [(name: String, colors: [Color])] = [

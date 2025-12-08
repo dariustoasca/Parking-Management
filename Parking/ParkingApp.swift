@@ -19,9 +19,12 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 @main
 struct ParkingApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
+    @AppStorage("isDarkMode") private var isDarkMode: Bool = false
+    
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .preferredColorScheme(isDarkMode ? .dark : .light)
         }
     }
 }

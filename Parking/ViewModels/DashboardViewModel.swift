@@ -49,7 +49,7 @@ class DashboardViewModel: ObservableObject {
     @Published var unreadMessageCount = 0
     
     // Firestore
-    private let db = Firestore.firestore()
+    private let db = Firestore.firestore(database: "parking")
     private var listeners: [ListenerRegistration] = []
     private var currentUserUID: String = ""
     

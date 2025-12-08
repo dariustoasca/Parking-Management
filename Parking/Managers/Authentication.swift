@@ -222,6 +222,62 @@ class AuthenticationManager: ObservableObject {
         }
     }
     
+    // MARK: - Sign Up (Create Account)
+    
+    func signUp(email: String, password: String, displayName: String) async throws {
+        isLoading = true
+        errorMessage = nil
+        
+        do {
+            // Create user in Firebase Auth
+            let result = try await Auth.auth().createUser(withEmail: email, password: password)
+            let user = result.user
+            
+            print("[Auth] Sign up successful for: \(user.email ?? "unknown")")
+            
+            // Create user profile in Firestore
+            let newProfile: [String: Any] = [
+                "uid": user.uid,
+                "email": email,
+                "displayName": displayName.isEmpty ? "User" : displayName,
+                "role": "user",
+                "isActive": true,
+                "createdAt": FieldValue.serverTimestamp()
+            ]
+            try await db.collection("Users").document(user.uid).setData(newProfile)
+            
+            // Save to device
+            DeviceAuthManager.saveAuthState(uid: user.uid, email: email)
+            DeviceAuthManager.updateLastActiveTimestamp()
+            
+            // Update state
+            self.currentUserUID = user.uid
+            self.currentUserEmail = email
+            self.currentUserData = newProfile
+            self.isAuthenticated = true
+            self.isLoading = false
+            
+        } catch let error as NSError {
+            isLoading = false
+            
+            // Map Firebase errors to user-friendly messages
+            switch error.code {
+            case AuthErrorCode.emailAlreadyInUse.rawValue:
+                errorMessage = "This email is already registered. Please sign in."
+            case AuthErrorCode.invalidEmail.rawValue:
+                errorMessage = "Invalid email address format."
+            case AuthErrorCode.weakPassword.rawValue:
+                errorMessage = "Password is too weak. Use at least 6 characters."
+            case AuthErrorCode.networkError.rawValue:
+                errorMessage = "Network error. Check your connection."
+            default:
+                errorMessage = error.localizedDescription
+            }
+            
+            throw error
+        }
+    }
+    
     // MARK: - Sign Out
     
     func signOut() {

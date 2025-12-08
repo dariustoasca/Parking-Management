@@ -5,11 +5,14 @@ struct LoginView: View {
     @EnvironmentObject var authManager: AuthenticationManager
     @State private var email = ""
     @State private var password = ""
+    @State private var confirmPassword = ""
+    @State private var displayName = ""
     @State private var isSecured = true
     @State private var showResetPassword = false
     @State private var resetEmail = ""
     @State private var showingAlert = false
     @State private var alertMessage = ""
+    @State private var isSignUpMode = false
     
     @Environment(\.colorScheme) var colorScheme
     
@@ -42,7 +45,7 @@ struct LoginView: View {
                             .fontWeight(.bold)
                             .foregroundColor(.primary)
                         
-                        Text("Welcome back, please sign in")
+                        Text(isSignUpMode ? "Create your account" : "Welcome back, please sign in")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
@@ -50,6 +53,20 @@ struct LoginView: View {
                     
                     // Form Fields
                     VStack(spacing: 20) {
+                        // Display Name (Sign Up only)
+                        if isSignUpMode {
+                            HStack {
+                                Image(systemName: "person.fill")
+                                    .foregroundColor(.gray)
+                                TextField("Full Name", text: $displayName)
+                                    .autocapitalization(.words)
+                            }
+                            .padding()
+                            .background(Color(.systemBackground))
+                            .cornerRadius(12)
+                            .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
+                        }
+                        
                         // Email Field
                         HStack {
                             Image(systemName: "envelope.fill")
@@ -84,25 +101,40 @@ struct LoginView: View {
                         .cornerRadius(12)
                         .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
                         
-                        // Forgot Password
-                        HStack {
-                            Spacer()
-                            Button("Forgot Password?") {
-                                showResetPassword = true
+                        // Confirm Password (Sign Up only)
+                        if isSignUpMode {
+                            HStack {
+                                Image(systemName: "lock.fill")
+                                    .foregroundColor(.gray)
+                                SecureField("Confirm Password", text: $confirmPassword)
                             }
-                            .font(.caption)
-                            .foregroundColor(.blue)
+                            .padding()
+                            .background(Color(.systemBackground))
+                            .cornerRadius(12)
+                            .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
+                        }
+                        
+                        // Forgot Password (Sign In only)
+                        if !isSignUpMode {
+                            HStack {
+                                Spacer()
+                                Button("Forgot Password?") {
+                                    showResetPassword = true
+                                }
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                            }
                         }
                     }
                     .padding(.horizontal)
                     
-                    // Sign In Button
-                    Button(action: signIn) {
+                    // Action Button
+                    Button(action: isSignUpMode ? signUp : signIn) {
                         if authManager.isLoading {
                             ProgressView()
                                 .progressViewStyle(CircularProgressViewStyle(tint: .white))
                         } else {
-                            Text("Sign In")
+                            Text(isSignUpMode ? "Create Account" : "Sign In")
                                 .font(.headline)
                                 .fontWeight(.bold)
                                 .foregroundColor(.white)
@@ -117,6 +149,25 @@ struct LoginView: View {
                     .shadow(radius: 5)
                     .padding(.horizontal)
                     .disabled(authManager.isLoading)
+                    
+                    // Toggle Mode Button
+                    Button(action: { 
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            isSignUpMode.toggle()
+                            // Clear fields when switching
+                            password = ""
+                            confirmPassword = ""
+                        }
+                    }) {
+                        HStack {
+                            Text(isSignUpMode ? "Already have an account?" : "Don't have an account?")
+                                .foregroundColor(.secondary)
+                            Text(isSignUpMode ? "Sign In" : "Sign Up")
+                                .fontWeight(.bold)
+                                .foregroundColor(.blue)
+                        }
+                        .font(.subheadline)
+                    }
                     
                     Spacer()
                 }
@@ -143,6 +194,35 @@ struct LoginView: View {
                 try await authManager.signIn(email: email, password: password, enableBiometric: false)
             } catch {
                 alertMessage = error.localizedDescription
+                showingAlert = true
+            }
+        }
+    }
+    
+    private func signUp() {
+        guard !email.isEmpty, !password.isEmpty else {
+            alertMessage = "Please fill in all required fields."
+            showingAlert = true
+            return
+        }
+        
+        guard password == confirmPassword else {
+            alertMessage = "Passwords do not match."
+            showingAlert = true
+            return
+        }
+        
+        guard password.count >= 6 else {
+            alertMessage = "Password must be at least 6 characters."
+            showingAlert = true
+            return
+        }
+        
+        Task {
+            do {
+                try await authManager.signUp(email: email, password: password, displayName: displayName)
+            } catch {
+                alertMessage = authManager.errorMessage ?? error.localizedDescription
                 showingAlert = true
             }
         }

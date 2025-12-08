@@ -6,9 +6,12 @@ struct TicketDetailView: View {
     let ticketId: String
     @Environment(\.dismiss) var dismiss
     @State private var ticket: ParkingTicket?
+    @State private var isLoading = true
     @State private var showPayView = false
     @State private var showingBarrierAlert = false
     @State private var barrierMessage = ""
+    @State private var barrierOpening = false
+    @State private var barrierSuccess = false
     
     private let context = CIContext()
     private let filter = CIFilter.qrCodeGenerator()
@@ -46,14 +49,14 @@ struct TicketDetailView: View {
                                 .interpolation(.none)
                                 .scaledToFit()
                                 .frame(width: 200, height: 200)
+                                .padding(20)
+                                .background(Color.white)
+                                .cornerRadius(20)
                             
-                            Text("Scan at exit")
+                            Text("Scan to verify")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
-                        .padding(40)
-                        .background(Color.white)
-                        .cornerRadius(20)
                         .shadow(radius: 10)
                         
                         // Details
@@ -84,14 +87,26 @@ struct TicketDetailView: View {
                             .padding(.horizontal)
                         } else if ticket.status == "paid" {
                             Button(action: openBarrier) {
-                                Text("Open Barrier")
-                                    .font(.headline)
-                                    .foregroundColor(.white)
-                                    .frame(maxWidth: .infinity)
-                                    .padding()
-                                    .background(Color.green)
-                                    .cornerRadius(16)
+                                HStack {
+                                    if barrierOpening {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    } else if barrierSuccess {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .font(.title3)
+                                    }
+                                    
+                                    Text(barrierSuccess ? "Barrier Opened!" : (barrierOpening ? "Opening..." : "Open Barrier"))
+                                        .font(.headline)
+                                        .fontWeight(barrierSuccess ? .bold : .regular)
+                                }
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(barrierSuccess ? Color.blue : Color.green)
+                                .cornerRadius(16)
                             }
+                            .disabled(barrierOpening || barrierSuccess)
                             .padding(.horizontal)
                         }
                     }
@@ -137,7 +152,10 @@ struct TicketDetailView: View {
         db.collection("ParkingTickets").document(ticketId).getDocument { snapshot, error in
             if let document = snapshot, document.exists {
                 do {
-                    self.ticket = try document.data(as: ParkingTicket.self)
+                    let decodedTicket = try document.data(as: ParkingTicket.self)
+                    Task { @MainActor in
+                        self.ticket = decodedTicket
+                    }
                 } catch {
                     print("Error decoding ticket: \(error)")
                 }
@@ -146,20 +164,43 @@ struct TicketDetailView: View {
     }
     
     private func openBarrier() {
+        barrierOpening = true
         let db = Firestore.firestore(database: "parking")
-        // Assuming "exitBarrier" is the one to open
+        
         db.collection("Barrier").document("exitBarrier").updateData([
-            "isOpen": true
-        ]) { error in
+            "isOpen": true,
+            "lastOpenedAt": FieldValue.serverTimestamp()
+        ]) { [self] error in
+            barrierOpening = false
+            
             if let error = error {
-                barrierMessage = "Failed to open barrier: \(error.localizedDescription)"
+                print("Failed to open barrier: \(error.localizedDescription)")
             } else {
-                barrierMessage = "Barrier Opening..."
-                // Optionally update ticket to completed
+                barrierSuccess = true
+                print("Barrier opening... will close in 30 seconds")
+                
+                // Update ticket to completed
                 db.collection("ParkingTickets").document(ticketId).updateData(["status": "completed"])
-                fetchTicket()
+                
+                // Close barrier after 30 seconds
+                DispatchQueue.main.asyncAfter(deadline: .now() + 30) {
+                    db.collection("Barrier").document("exitBarrier").updateData([
+                        "isOpen": false
+                    ]) { error in
+                        if let error = error {
+                            print("Error closing barrier: \(error)")
+                        } else {
+                            print("Barrier closed automatically after 30 seconds")
+                        }
+                    }
+                }
+                
+                // Hide success message and refresh after 3 seconds
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    fetchTicket()
+                    barrierSuccess = false
+                }
             }
-            showingBarrierAlert = true
         }
     }
     

@@ -18,6 +18,8 @@ struct ProfileView: View {
     @State private var showResetPasswordAlert = false
     @State private var didSendResetEmail: Bool = false
     @State private var showGradientPicker = false
+    @State private var showUsernameSheet = false
+    @State private var showPaymentMethodsSheet = false
     
     @Environment(\.colorScheme) private var colorScheme
     
@@ -78,6 +80,12 @@ struct ProfileView: View {
         .sheet(isPresented: $showGradientPicker) {
             GradientPickerSheet(viewModel: authManager, onDismiss: { showGradientPicker = false })
         }
+        .sheet(isPresented: $showUsernameSheet) {
+            UsernameChangeSheet(authManager: authManager, isPresented: $showUsernameSheet)
+        }
+        .sheet(isPresented: $showPaymentMethodsSheet) {
+            PaymentMethodsView(isPresented: $showPaymentMethodsSheet)
+        }
         .onAppear {
             if let userId = authManager.currentUserUID {
                 profilePicManager.startListeningToProfile(userId: userId)
@@ -90,28 +98,7 @@ struct ProfileView: View {
     
     // MARK: - Background
     private var backgroundGradient: some View {
-        LinearGradient(
-            gradient: Gradient(colors: gradientColors),
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .ignoresSafeArea()
-    }
-    
-    private var gradientColors: [Color] {
-        if colorScheme == .dark {
-            return [
-                Color(red: 37/255, green: 99/255, blue: 235/255).opacity(0.3),
-                Color(red: 29/255, green: 78/255, blue: 216/255).opacity(0.2),
-                Color(red: 49/255, green: 46/255, blue: 129/255).opacity(0.4)
-            ]
-        } else {
-            return [
-                Color(red: 240/255, green: 242/255, blue: 246/255),
-                Color(red: 226/255, green: 232/255, blue: 240/255),
-                Color(red: 203/255, green: 213/255, blue: 225/255)
-            ]
-        }
+        BackgroundView()
     }
     
     // MARK: - Profile Header
@@ -192,7 +179,30 @@ struct ProfileView: View {
             
             VStack(spacing: 0) {
                 // Face ID Toggle Removed
-
+                
+                // Change Username
+                SettingsButtonRow(
+                    icon: "person.fill",
+                    title: "Change Username",
+                    color: .blue,
+                    action: {
+                        HapticManager.selection()
+                        showUsernameSheet = true
+                    }
+                )
+                
+                Divider().padding(.leading, 56)
+                
+                // Payment Methods
+                SettingsButtonRow(
+                    icon: "creditcard.fill",
+                    title: "Payment Methods",
+                    color: .green,
+                    action: {
+                        HapticManager.selection()
+                        showPaymentMethodsSheet = true
+                    }
+                )
                 
                 Divider().padding(.leading, 56)
                 
@@ -403,7 +413,7 @@ struct QuickStatsView: View {
     
     private func loadQuickStats() {
         guard let userId = authManager.currentUserUID else { return }
-        let db = Firestore.firestore()
+        let db = Firestore.firestore(database: "parking")
         
         // Load total hours from time tracking
         db.collection("TimeTracking")
@@ -515,7 +525,7 @@ struct SettingsToggleRow: View {
             
             Toggle("", isOn: $isOn)
                 .labelsHidden()
-                .onChange(of: isOn) { _ in
+                .onChange(of: isOn) { 
                     HapticManager.selection()
                 }
         }
@@ -556,7 +566,7 @@ struct AboutView: View {
                         }
                         .shadow(color: .blue.opacity(0.3), radius: 10, x: 0, y: 5)
                         
-                        Text("HQ Management")
+                        Text("Parking Management")
                             .font(.title)
                             .fontWeight(.bold)
                         
@@ -572,7 +582,7 @@ struct AboutView: View {
                             .font(.headline)
                             .foregroundColor(.primary)
                         
-                        Text("HQ Management is a comprehensive smart office management system designed to streamline workplace operations. Manage rooms, parking, time tracking, and internal communications all in one place.")
+                        Text("Parking Management is a smart system designed to simplify parking operations. View available spots, pay for tickets, and control barriers seamlessly. This app integrates with a physical maquette powered by Arduino and Raspberry Pi for real-time hardware control.")
                             .font(.body)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.leading)
@@ -588,13 +598,11 @@ struct AboutView: View {
                             .font(.headline)
                             .foregroundColor(.primary)
                         
-                        FeatureRow(icon: "building.2.fill", title: "Room Management", description: "Control lights, HVAC, and monitor occupancy")
+                        FeatureRow(icon: "parkingsign", title: "Real-time Availability", description: "Monitor parking spot status instantly")
                         Divider()
-                        FeatureRow(icon: "parkingsign", title: "Parking Management", description: "Assign and track parking spots")
+                        FeatureRow(icon: "ticket.fill", title: "Ticket Management", description: "View and pay for parking tickets")
                         Divider()
-                        FeatureRow(icon: "clock.fill", title: "Time Tracking", description: "Clock in/out and track work hours")
-                        Divider()
-                        FeatureRow(icon: "envelope.fill", title: "Messaging", description: "Internal communication system")
+                        FeatureRow(icon: "sensor.tag.radiowaves.forward.fill", title: "Hardware Integration", description: "Control barriers via Arduino & RPi")
                         Divider()
                         FeatureRow(icon: "bell.fill", title: "Smart Notifications", description: "Stay updated with real-time alerts")
                     }
@@ -627,10 +635,6 @@ struct AboutView: View {
                             }
                             
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("Creators")
-                                    .font(.body)
-                                    .fontWeight(.semibold)
-                                
                                 Text("Darius Toasca")
                                 Text("Szilagyi Dragos")
                                 Text("Cereteu Paul")
@@ -648,7 +652,7 @@ struct AboutView: View {
                     .shadow(color: shadowColor, radius: 5, x: 0, y: 2)
                     
                     // Copyright
-                    Text("© 2025 HQ Management. All rights reserved.")
+                    Text("© 2025 Parking Management. All rights reserved.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .padding(.bottom, 20)
@@ -908,6 +912,574 @@ struct SettingsButtonRow: View {
             .padding()
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Username Change Sheet
+
+struct UsernameChangeSheet: View {
+    @ObservedObject var authManager: AuthenticationManager
+    @Binding var isPresented: Bool
+    @State private var newUsername: String = ""
+    @State private var isUpdating = false
+    @State private var showError = false
+    @State private var errorMessage = ""
+    @Environment(\.colorScheme) var colorScheme
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 24) {
+                // Header
+                VStack(spacing: 8) {
+                    Image(systemName: "person.crop.circle.badge.checkmark")
+                        .font(.system(size: 60))
+                        .foregroundColor(.blue)
+                    
+                    Text("Change Username")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    Text("Enter your new display name")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.top, 40)
+                
+                // Current Username
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Current Username")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.leading, 4)
+                    
+                    HStack {
+                        Image(systemName: "person.fill")
+                            .foregroundColor(.gray)
+                        
+                        Text(authManager.currentUserData?["displayName"] as? String ?? "User")
+                            .foregroundColor(.secondary)
+                        
+                        Spacer()
+                    }
+                    .padding()
+                    .background(colorScheme == .dark ? Color(white: 0.15) : Color(.systemGray6))
+                    .cornerRadius(12)
+                }
+                .padding(.horizontal)
+                
+                // New Username Input
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("New Username")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.leading, 4)
+                    
+                    HStack {
+                        Image(systemName: "pencil")
+                            .foregroundColor(.blue)
+                        
+                        TextField("Enter new username", text: $newUsername)
+                            .textInputAutocapitalization(.words)
+                            .autocorrectionDisabled()
+                    }
+                    .padding()
+                    .background(colorScheme == .dark ? Color(white: 0.15) : Color(.systemGray6))
+                    .cornerRadius(12)
+                }
+                .padding(.horizontal)
+                
+                Spacer()
+                
+                // Update Button
+                Button(action: updateUsername) {
+                    HStack {
+                        if isUpdating {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        } else {
+                            Text("Update Username")
+                                .fontWeight(.semibold)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(newUsername.trimmingCharacters(in: .whitespaces).isEmpty ? Color.gray : Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(12)
+                }
+                .disabled(newUsername.trimmingCharacters(in: .whitespaces).isEmpty || isUpdating)
+                .padding(.horizontal)
+                .padding(.bottom, 20)
+            }
+            .background(colorScheme == .dark ? Color.black : Color(.systemGroupedBackground))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        isPresented = false
+                    }
+                }
+            }
+            .alert("Error", isPresented: $showError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(errorMessage)
+            }
+        }
+        .onAppear {
+            newUsername = authManager.currentUserData?["displayName"] as? String ?? ""
+        }
+    }
+    
+    private func updateUsername() {
+        let trimmedName = newUsername.trimmingCharacters(in: .whitespaces)
+        
+        guard !trimmedName.isEmpty else { return }
+        
+        isUpdating = true
+        
+        Task {
+            do {
+                try await authManager.updateDisplayName(name: trimmedName)
+                await MainActor.run {
+                    isUpdating = false
+                    isPresented = false
+                }
+            } catch {
+                await MainActor.run {
+                    isUpdating = false
+                    errorMessage = error.localizedDescription
+                    showError = true
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Payment Methods View
+struct PaymentMethodsView: View {
+    @Binding var isPresented: Bool
+    @Environment(\.colorScheme) private var colorScheme
+    
+    @State private var savedCards: [PaymentCard] = []
+    @State private var isLoading = true
+    @State private var showAddCardForm = false
+    
+    // New card form fields
+    @State private var cardNumber = ""
+    @State private var expirationDate = ""
+    @State private var cvv = ""
+    @State private var cardHolderName = ""
+    @State private var isSaving = false
+    @State private var showAlert = false
+    @State private var alertMessage = ""
+    
+    private let db = Firestore.firestore(database: "parking")
+    
+    var body: some View {
+        NavigationView {
+            ZStack {
+                backgroundGradient
+                
+                ScrollView {
+                    VStack(spacing: 20) {
+                        if isLoading {
+                            ProgressView()
+                                .padding(.top, 50)
+                        } else if savedCards.isEmpty && !showAddCardForm {
+                            // Empty State
+                            VStack(spacing: 16) {
+                                Image(systemName: "creditcard")
+                                    .font(.system(size: 60))
+                                    .foregroundColor(.gray)
+                                
+                                Text("No Payment Methods")
+                                    .font(.title2)
+                                    .fontWeight(.semibold)
+                                
+                                Text("Add a credit card to save time when paying for tickets")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal)
+                                
+                                Button(action: { showAddCardForm = true }) {
+                                    HStack {
+                                        Image(systemName: "plus.circle.fill")
+                                        Text("Add Card")
+                                    }
+                                    .foregroundColor(.white)
+                                    .padding()
+                                    .background(Color.blue)
+                                    .cornerRadius(12)
+                                }
+                            }
+                            .padding(.top, 50)
+                        } else {
+                            // Saved Cards List
+                            if !savedCards.isEmpty {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Text("Your Cards")
+                                        .font(.headline)
+                                        .foregroundColor(.primary)
+                                    
+                                    ForEach(savedCards) { card in
+                                        PaymentCardRow(card: card, onDelete: {
+                                            deleteCard(card)
+                                        })
+                                    }
+                                }
+                                .padding()
+                                .background(cardBackground)
+                                .cornerRadius(16)
+                            }
+                            
+                            // Add Card Form
+                            if showAddCardForm {
+                                addCardFormSection
+                            } else {
+                                Button(action: { showAddCardForm = true }) {
+                                    HStack {
+                                        Image(systemName: "plus.circle.fill")
+                                        Text("Add New Card")
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(cardBackground)
+                                    .cornerRadius(12)
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                }
+            }
+            .navigationTitle("Payment Methods")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Done") {
+                        isPresented = false
+                    }
+                }
+            }
+            .alert(isPresented: $showAlert) {
+                Alert(title: Text("Payment Method"), message: Text(alertMessage), dismissButton: .default(Text("OK")))
+            }
+            .onAppear {
+                loadSavedCards()
+            }
+        }
+    }
+    
+    private var backgroundGradient: some View {
+        LinearGradient(
+            gradient: Gradient(colors: gradientColors),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .ignoresSafeArea()
+    }
+    
+    private var gradientColors: [Color] {
+        if colorScheme == .dark {
+            return [
+                Color(red: 37/255, green: 99/255, blue: 235/255).opacity(0.3),
+                Color(red: 29/255, green: 78/255, blue: 216/255).opacity(0.2),
+                Color(red: 49/255, green: 46/255, blue: 129/255).opacity(0.4)
+            ]
+        } else {
+            return [
+                Color(red: 240/255, green: 242/255, blue: 246/255),
+                Color(red: 226/255, green: 232/255, blue: 240/255),
+                Color(red: 203/255, green: 213/255, blue: 225/255)
+            ]
+        }
+    }
+    
+    private var cardBackground: some View {
+        Group {
+            if colorScheme == .dark {
+                Color(red: 0.11, green: 0.11, blue: 0.13)
+            } else {
+                Color(.systemBackground)
+            }
+        }
+    }
+    
+    private var addCardFormSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Add New Card")
+                    .font(.headline)
+                Spacer()
+                Button(action: { showAddCardForm = false }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.gray)
+                }
+            }
+            
+            VStack(spacing: 16) {
+                // Card Number
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Card Number")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    TextField("0000 0000 0000 0000", text: $cardNumber)
+                        .keyboardType(.numberPad)
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(10)
+                        .onChange(of: cardNumber) { _, newValue in
+                            if newValue.count > 16 {
+                                cardNumber = String(newValue.prefix(16))
+                            }
+                        }
+                }
+                
+                HStack(spacing: 16) {
+                    // Expiration
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Expires (MM/YY)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        TextField("MM/YY", text: $expirationDate)
+                            .keyboardType(.numberPad)
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .cornerRadius(10)
+                            .onChange(of: expirationDate) { _, newValue in
+                                // Auto-format with /
+                                var cleaned = newValue.filter { $0.isNumber }
+                                if cleaned.count > 4 {
+                                    cleaned = String(cleaned.prefix(4))
+                                }
+                                if cleaned.count >= 2 {
+                                    let month = String(cleaned.prefix(2))
+                                    let year = String(cleaned.dropFirst(2))
+                                    expirationDate = month + "/" + year
+                                } else {
+                                    expirationDate = cleaned
+                                }
+                            }
+                    }
+                    
+                    // CVV
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("CVV")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        SecureField("123", text: $cvv)
+                            .keyboardType(.numberPad)
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .cornerRadius(10)
+                            .onChange(of: cvv) { _, newValue in
+                                if newValue.count > 3 {
+                                    cvv = String(newValue.prefix(3))
+                                }
+                            }
+                    }
+                }
+                
+                // Cardholder Name
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Cardholder Name")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    TextField("John Doe", text: $cardHolderName)
+                        .autocapitalization(.words)
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(10)
+                }
+                
+                // Save Button
+                Button(action: saveCard) {
+                    if isSaving {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    } else {
+                        Text("Save Card")
+                            .fontWeight(.semibold)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(isFormValid ? Color.blue : Color.gray)
+                .foregroundColor(.white)
+                .cornerRadius(12)
+                .disabled(!isFormValid || isSaving)
+            }
+        }
+        .padding()
+        .background(cardBackground)
+        .cornerRadius(16)
+    }
+    
+    private var isFormValid: Bool {
+        cardNumber.count == 16 &&
+        expirationDate.count >= 4 &&
+        cvv.count == 3 &&
+        !cardHolderName.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+    
+    private func loadSavedCards() {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            isLoading = false
+            return
+        }
+        
+        db.collection("Users").document(userId).collection("CreditCardDetails")
+            .order(by: "createdAt", descending: false)
+            .getDocuments { snapshot, error in
+                isLoading = false
+                if let error = error {
+                    print("❌ Error loading cards: \(error.localizedDescription)")
+                    return
+                }
+                
+                savedCards = snapshot?.documents.compactMap { doc in
+                    try? doc.data(as: PaymentCard.self)
+                } ?? []
+            }
+    }
+    
+    private func saveCard() {
+        guard let userId = Auth.auth().currentUser?.uid else { return }
+        
+        isSaving = true
+        
+        let last4 = String(cardNumber.suffix(4))
+        let cardType = detectCardType(cardNumber: cardNumber)
+        let expComponents = expirationDate.replacingOccurrences(of: "/", with: "")
+        
+        let expiryMonth = expComponents.count >= 2 ? String(expComponents.prefix(2)) : ""
+        let expiryYear = expComponents.count >= 4 ? String(expComponents.suffix(2)) : ""
+        
+        let cardData: [String: Any] = [
+            "userId": userId,
+            "last4Digits": last4,
+            "cardType": cardType,
+            "cardHolderName": cardHolderName.trimmingCharacters(in: .whitespaces),
+            "expiryMonth": expiryMonth,
+            "expiryYear": expiryYear,
+            "isDefault": savedCards.isEmpty,
+            "createdAt": FieldValue.serverTimestamp()
+        ]
+        
+        db.collection("Users").document(userId).collection("CreditCardDetails").addDocument(data: cardData) { error in
+            isSaving = false
+            
+            if let error = error {
+                alertMessage = "Failed to save card: \(error.localizedDescription)"
+                showAlert = true
+            } else {
+                // Clear form and reload
+                cardNumber = ""
+                expirationDate = ""
+                cvv = ""
+                cardHolderName = ""
+                showAddCardForm = false
+                alertMessage = "Card saved successfully!"
+                showAlert = true
+                loadSavedCards()
+            }
+        }
+    }
+    
+    private func deleteCard(_ card: PaymentCard) {
+        guard let userId = Auth.auth().currentUser?.uid,
+              let cardId = card.id else { return }
+        
+        // Remove from local array
+        if let index = savedCards.firstIndex(where: { $0.id == card.id }) {
+            savedCards.remove(at: index)
+        }
+        
+        // Delete from Firestore
+        db.collection("Users").document(userId).collection("CreditCardDetails").document(cardId).delete { error in
+            if let error = error {
+                print("❌ Error deleting card: \(error.localizedDescription)")
+                loadSavedCards() // Reload on error
+            }
+        }
+    }
+    
+    private func detectCardType(cardNumber: String) -> String {
+        let firstDigit = cardNumber.prefix(1)
+        let firstTwo = cardNumber.prefix(2)
+        
+        if firstDigit == "4" {
+            return "Visa"
+        } else if ["51", "52", "53", "54", "55"].contains(firstTwo) {
+            return "Mastercard"
+        } else if ["34", "37"].contains(firstTwo) {
+            return "Amex"
+        } else if firstTwo == "65" || cardNumber.hasPrefix("6011") {
+            return "Discover"
+        }
+        return "Card"
+    }
+}
+
+// MARK: - Payment Card Row (for Profile)
+struct PaymentCardRow: View {
+    let card: PaymentCard
+    let onDelete: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: cardIcon)
+                .font(.title2)
+                .foregroundColor(.blue)
+                .frame(width: 40)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(card.displayName)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                
+                Text("Expires \(card.expiryDisplay)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            if card.isDefault {
+                Text("Default")
+                    .font(.caption2)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.green)
+                    .cornerRadius(8)
+            }
+            
+            Button(action: onDelete) {
+                Image(systemName: "trash")
+                    .foregroundColor(.red)
+            }
+            .buttonStyle(BorderlessButtonStyle())
+        }
+        .padding()
+        .background(colorScheme == .dark ? Color.gray.opacity(0.1) : Color(.systemGray6))
+        .cornerRadius(12)
+    }
+    
+    private var cardIcon: String {
+        switch card.cardType.lowercased() {
+        case "visa": return "creditcard.fill"
+        case "mastercard": return "creditcard.circle.fill"
+        case "amex": return "creditcard.trianglebadge.exclamationmark"
+        default: return "creditcard"
+        }
     }
 }
 

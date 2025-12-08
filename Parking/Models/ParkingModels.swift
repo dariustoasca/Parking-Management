@@ -43,7 +43,7 @@ struct ParkingSpot: Identifiable, Codable {
     var assignedUserId: String?
     
     var displayName: String {
-        "\(section)\(number)"
+        id ?? "spot\(section)\(number)"
     }
     
     enum CodingKeys: String, CodingKey {
@@ -52,5 +52,52 @@ struct ParkingSpot: Identifiable, Codable {
         case section
         case occupied
         case assignedUserId
+    }
+}
+
+struct PaymentCard: Identifiable, Codable {
+    @DocumentID var id: String?
+    let userId: String
+    let last4Digits: String  // Only store last 4 for security
+    let cardType: String     // "Visa", "Mastercard", "Amex", etc.
+    let cardHolderName: String?  // Optional for backwards compatibility
+    let expiryMonth: String
+    let expiryYear: String
+    var isDefault: Bool
+    let createdAt: Date?  // Optional for backwards compatibility
+    
+    var displayName: String {
+        "\(cardType) •••• \(last4Digits)"
+    }
+    
+    var expiryDisplay: String {
+        "\(expiryMonth)/\(expiryYear)"
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId
+        case last4Digits
+        case cardType
+        case cardHolderName
+        case expiryMonth
+        case expiryYear
+        case isDefault
+        case createdAt
+    }
+    
+    // Custom decoder for backwards compatibility
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        id = try container.decodeIfPresent(String.self, forKey: .id)
+        userId = try container.decodeIfPresent(String.self, forKey: .userId) ?? ""
+        last4Digits = try container.decodeIfPresent(String.self, forKey: .last4Digits) ?? ""
+        cardType = try container.decodeIfPresent(String.self, forKey: .cardType) ?? "Card"
+        cardHolderName = try container.decodeIfPresent(String.self, forKey: .cardHolderName)
+        expiryMonth = try container.decodeIfPresent(String.self, forKey: .expiryMonth) ?? ""
+        expiryYear = try container.decodeIfPresent(String.self, forKey: .expiryYear) ?? ""
+        isDefault = try container.decodeIfPresent(Bool.self, forKey: .isDefault) ?? false
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
     }
 }

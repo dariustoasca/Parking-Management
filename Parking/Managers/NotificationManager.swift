@@ -8,7 +8,7 @@ import FirebaseAuth
 class NotificationManager: NSObject, ObservableObject {
     static let shared = NotificationManager()
     
-    private let db = Firestore.firestore()
+    private let db = Firestore.firestore(database: "parking")
     private var messageListener: ListenerRegistration?
     @Published var hasNotificationPermission = false
     @Published var isDoNotDisturbEnabled = false
@@ -141,13 +141,13 @@ class NotificationManager: NSObject, ObservableObject {
                 }.count ?? 0
                 
                 DispatchQueue.main.async {
-                    UIApplication.shared.applicationIconBadgeNumber = unreadCount
+                    UNUserNotificationCenter.current().setBadgeCount(unreadCount)
                 }
             }
     }
     
     func clearBadge() {
-        UIApplication.shared.applicationIconBadgeNumber = 0
+        UNUserNotificationCenter.current().setBadgeCount(0)
     }
     
     // MARK: - Parking Notifications
@@ -268,7 +268,7 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         // Handle notification tap
-        let userInfo = response.notification.request.content.userInfo
+        _ = response.notification.request.content.userInfo
         
         // Navigate to appropriate screen based on notification type
         if response.notification.request.identifier.hasPrefix("message_") {

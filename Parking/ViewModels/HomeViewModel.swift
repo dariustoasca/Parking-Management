@@ -168,12 +168,10 @@ class HomeViewModel: ObservableObject {
     }
 
     private func listenToRecentlyPaidTicket(userId: String) {
-        let fifteenMinutesAgo = Date().addingTimeInterval(-15 * 60)
-
+        // Listen to all paid tickets for this user (no time filter in query)
         paidTicketListener = db.collection("ParkingTickets")
             .whereField("userId", isEqualTo: userId)
             .whereField("status", isEqualTo: "paid")
-            .whereField("paidAt", isGreaterThan: Timestamp(date: fifteenMinutesAgo))
             .limit(to: 1)
             .addSnapshotListener { [weak self] snapshot, error in
                 guard let self = self else { return }
@@ -187,24 +185,27 @@ class HomeViewModel: ObservableObject {
                         let ticket = try document.data(as: ParkingTicket.self)
                         // Set endTime from paidAt timestamp
                         if let paidAt = document.data()["paidAt"] as? Timestamp {
-                            var updatedTicket = ticket
-                            updatedTicket.endTime = paidAt.dateValue()
-                            self.recentlyPaidTicket = updatedTicket
+                            let paidAtDate = paidAt.dateValue()
+                            let fifteenMinutesAgo = Date().addingTimeInterval(-15 * 60)
                             
-                            // Check if ticket should be expired (15 minutes passed)
-                            let expirationTime = paidAt.dateValue().addingTimeInterval(15 * 60)
-                            if Date() > expirationTime {
-                                // Expire the ticket
+                            // Check if ticket is still within 15-minute window
+                            if paidAtDate > fifteenMinutesAgo {
+                                var updatedTicket = ticket
+                                updatedTicket.endTime = paidAtDate
+                                self.recentlyPaidTicket = updatedTicket
+                                self.updateRemainingTime()
+                            } else {
+                                // Ticket has expired - update status
                                 self.db.collection("ParkingTickets").document(document.documentID).updateData([
                                     "status": "expired"
                                 ])
                                 self.recentlyPaidTicket = nil
+                                self.remainingTime = 0
                             }
                         } else {
                             self.recentlyPaidTicket = ticket
+                            self.updateRemainingTime()
                         }
-                        // Update remaining time after setting ticket
-                        self.updateRemainingTime()
                     } catch {
                         print("Error decoding paid ticket: \(error)")
                     }

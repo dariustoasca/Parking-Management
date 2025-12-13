@@ -5,7 +5,6 @@ struct ParkingGridView: View {
     @Environment(\.colorScheme) var colorScheme
     
     let columns = [
-        GridItem(.flexible()),
         GridItem(.flexible())
     ]
     

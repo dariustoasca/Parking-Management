@@ -13,7 +13,7 @@ class HomeViewModel: ObservableObject {
     @Published var barrierSuccess = false
     @Published var remainingTime: Int = 0 // Added to track occupied spots
 
-    let totalSpots = 10 // 2 columns x 5 rows
+    let totalSpots = 5 // 1 column x 5 rows
 
     var occupancyRate: Double {
         guard totalSpots > 0 else { return 0 }

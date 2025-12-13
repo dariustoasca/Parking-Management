@@ -112,20 +112,8 @@ exports.seedParkingSpots = onRequest(
         }, { merge: true });
       }
 
-      // Column 2: spot21 to spot25
-      for (let i = 1; i <= 5; i++) {
-        const spotId = `spot2${i}`;
-        const spotRef = db.collection("ParkingSpots").doc(spotId);
-        batch.set(spotRef, {
-          number: i,
-          section: "2",
-          occupied: false,
-          assignedUserId: null,
-        }, { merge: true });
-      }
-
       await batch.commit();
-      response.send("Database seeded successfully with 10 parking spots.");
+      response.send("Database seeded successfully with 5 parking spots.");
     } catch (error) {
       logger.error("Error seeding database", error);
       response.status(500).send("Error seeding database: " + error.message);

@@ -89,7 +89,7 @@ exports.autoCloseBarrier = onDocumentUpdated(
 
 /**
  * HTTP function to seed the database with parking spots.
- * Run this once to populate the ParkingSpots collection.
+ * Deletes all existing spots and creates exactly 5 new ones.
  */
 exports.seedParkingSpots = onRequest(
   {
@@ -97,23 +97,31 @@ exports.seedParkingSpots = onRequest(
   },
   async (request, response) => {
     const db = getFirestore("parking");
-    const batch = db.batch();
 
     try {
-      // Column 1: spot11 to spot15
+      // First, delete all existing parking spots
+      const existingSpots = await db.collection("ParkingSpots").get();
+      const deleteBatch = db.batch();
+      existingSpots.docs.forEach((doc) => {
+        deleteBatch.delete(doc.ref);
+      });
+      await deleteBatch.commit();
+      logger.info(`Deleted ${existingSpots.docs.length} existing parking spots`);
+
+      // Now create exactly 5 new spots
+      const createBatch = db.batch();
       for (let i = 1; i <= 5; i++) {
-        const spotId = `spot1${i}`;
+        const spotId = `spot${i}`;
         const spotRef = db.collection("ParkingSpots").doc(spotId);
-        batch.set(spotRef, {
+        createBatch.set(spotRef, {
           number: i,
-          section: "1",
           occupied: false,
           assignedUserId: null,
-        }, { merge: true });
+        });
       }
 
-      await batch.commit();
-      response.send("Database seeded successfully with 5 parking spots.");
+      await createBatch.commit();
+      response.send("Database seeded successfully with 5 parking spots (spot1-spot5).");
     } catch (error) {
       logger.error("Error seeding database", error);
       response.status(500).send("Error seeding database: " + error.message);
@@ -140,7 +148,7 @@ exports.seedTickets = onRequest(
       {
         id: "TKT-2025-001",
         userId: userId,
-        spotId: "spot11",
+        spotId: "spot1",
         startTime: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
         endTime: null,
         status: "active",
@@ -150,7 +158,7 @@ exports.seedTickets = onRequest(
       {
         id: "TKT-2024-892",
         userId: userId,
-        spotId: "spot23",
+        spotId: "spot2",
         startTime: new Date("2024-12-01T10:00:00"),
         endTime: new Date("2024-12-01T14:30:00"),
         status: "paid",
@@ -160,7 +168,7 @@ exports.seedTickets = onRequest(
       {
         id: "TKT-2024-855",
         userId: userId,
-        spotId: "spot15",
+        spotId: "spot3",
         startTime: new Date("2024-11-28T09:00:00"),
         endTime: new Date("2024-11-28T10:45:00"),
         status: "paid",
@@ -297,6 +305,340 @@ exports.savePaymentCard = onCall(
     } catch (error) {
       logger.error("Error saving payment card", error);
       throw new HttpsError("internal", "Unable to save card.");
+    }
+  },
+);
+
+// ============================================
+// BARRIER ENTRY/EXIT SYSTEM
+// ============================================
+
+/**
+ * Helper function to generate a unique ticket ID.
+ * Format: TKT-{YEAR}-{3 random digits}
+ * @param {FirebaseFirestore.Firestore} db - Firestore database instance
+ * @return {Promise<string>} Unique ticket ID
+ */
+async function generateUniqueTicketId(db) {
+  const year = new Date().getFullYear();
+  let ticketId;
+  let isUnique = false;
+  let attempts = 0;
+
+  while (!isUnique && attempts < 10) {
+    const randomNum = Math.floor(Math.random() * 900) + 100; // 100-999
+    ticketId = `TKT-${year}-${randomNum}`;
+
+    // Check if this ID already exists
+    const existing = await db.collection("ParkingTickets").doc(ticketId).get();
+    if (!existing.exists) {
+      isUnique = true;
+    }
+    attempts++;
+  }
+
+  if (!isUnique) {
+    // Fallback: use timestamp
+    ticketId = `TKT-${year}-${Date.now().toString().slice(-6)}`;
+  }
+
+  return ticketId;
+}
+
+/**
+ * Callable function for user to request parking entry.
+ * Registers the user as pending entry (1 minute timeout).
+ */
+exports.requestParkingEntry = onCall(
+  {
+    region: "europe-central2",
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Must be authenticated to request entry.",
+      );
+    }
+
+    const userId = request.auth.uid;
+    const db = getFirestore("parking");
+
+    try {
+      // Check if user already has an active ticket
+      const activeTickets = await db.collection("ParkingTickets")
+        .where("userId", "==", userId)
+        .where("status", "==", "active")
+        .limit(1)
+        .get();
+
+      if (!activeTickets.empty) {
+        throw new HttpsError(
+          "failed-precondition",
+          "You already have an active parking ticket.",
+        );
+      }
+
+      // Check if there are available spots
+      const availableSpots = await db.collection("ParkingSpots")
+        .where("occupied", "==", false)
+        .limit(1)
+        .get();
+
+      if (availableSpots.empty) {
+        throw new HttpsError(
+          "failed-precondition",
+          "No parking spots available.",
+        );
+      }
+
+      // Register pending entry
+      await db.collection("PendingEntry").doc("current").set({
+        pendingUserId: userId,
+        requestedAt: FieldValue.serverTimestamp(),
+      });
+
+      logger.info(`User ${userId} registered for parking entry`);
+      return { success: true, message: "Waiting for barrier button..." };
+    } catch (error) {
+      if (error instanceof HttpsError) throw error;
+      logger.error("Error requesting parking entry", error);
+      throw new HttpsError("internal", "Failed to request entry.");
+    }
+  },
+);
+
+/**
+ * HTTP function called by Raspberry Pi when ENTER button is pressed.
+ * Opens enter barrier and creates ticket if pending entry exists.
+ */
+exports.confirmParkingEntry = onRequest(
+  {
+    region: "europe-central2",
+  },
+  async (request, response) => {
+    const db = getFirestore("parking");
+
+    try {
+      // Get pending entry
+      const pendingDoc = await db.collection("PendingEntry").doc("current").get();
+
+      if (!pendingDoc.exists) {
+        response.status(400).json({
+          success: false,
+          message: "No pending entry request.",
+        });
+        return;
+      }
+
+      const pendingData = pendingDoc.data();
+      const requestedAt = pendingData.requestedAt ? pendingData.requestedAt.toDate() : null;
+
+      // Check if within 1 minute
+      if (!requestedAt) {
+        response.status(400).json({
+          success: false,
+          message: "Invalid pending entry data.",
+        });
+        return;
+      }
+
+      const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
+      if (requestedAt < oneMinuteAgo) {
+        // Expired - delete pending entry
+        await db.collection("PendingEntry").doc("current").delete();
+        response.status(400).json({
+          success: false,
+          message: "Entry request expired (1 minute timeout).",
+        });
+        return;
+      }
+
+      const userId = pendingData.pendingUserId;
+
+      // Find first available spot
+      const availableSpots = await db.collection("ParkingSpots")
+        .where("occupied", "==", false)
+        .limit(1)
+        .get();
+
+      if (availableSpots.empty) {
+        response.status(400).json({
+          success: false,
+          message: "No parking spots available.",
+        });
+        return;
+      }
+
+      const spotDoc = availableSpots.docs[0];
+      const spotId = spotDoc.id;
+
+      // Generate unique ticket ID
+      const ticketId = await generateUniqueTicketId(db);
+
+      // Create ticket
+      await db.collection("ParkingTickets").doc(ticketId).set({
+        userId: userId,
+        spotId: spotId,
+        startTime: FieldValue.serverTimestamp(),
+        endTime: null,
+        status: "active",
+        amount: 0,
+        qrCodeData: `${ticketId}-QR`,
+      });
+
+      // Open enter barrier
+      await db.collection("Barrier").doc("enterBarrier").update({
+        isOpen: true,
+      });
+
+      // Delete pending entry
+      await db.collection("PendingEntry").doc("current").delete();
+
+      logger.info(`Entry confirmed for user ${userId}, ticket ${ticketId}, spot ${spotId}`);
+      response.json({
+        success: true,
+        ticketId: ticketId,
+        spotId: spotId,
+        message: "Barrier opened, ticket created.",
+      });
+    } catch (error) {
+      logger.error("Error confirming parking entry", error);
+      response.status(500).json({
+        success: false,
+        message: "Internal error: " + error.message,
+      });
+    }
+  },
+);
+
+/**
+ * Callable function for user to request parking exit.
+ * Registers the user as pending exit (1 minute timeout).
+ */
+exports.requestParkingExit = onCall(
+  {
+    region: "europe-central2",
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Must be authenticated to request exit.",
+      );
+    }
+
+    const userId = request.auth.uid;
+    const db = getFirestore("parking");
+
+    try {
+      // Find the user's paid ticket (ready to exit)
+      const paidTickets = await db.collection("ParkingTickets")
+        .where("userId", "==", userId)
+        .where("status", "==", "paid")
+        .limit(1)
+        .get();
+
+      if (paidTickets.empty) {
+        throw new HttpsError(
+          "failed-precondition",
+          "No paid ticket found. Please pay your ticket first.",
+        );
+      }
+
+      const ticketDoc = paidTickets.docs[0];
+
+      // Register pending exit
+      await db.collection("PendingExit").doc("current").set({
+        pendingUserId: userId,
+        ticketId: ticketDoc.id,
+        requestedAt: FieldValue.serverTimestamp(),
+      });
+
+      logger.info(`User ${userId} registered for parking exit`);
+      return { success: true, message: "Waiting for barrier button..." };
+    } catch (error) {
+      if (error instanceof HttpsError) throw error;
+      logger.error("Error requesting parking exit", error);
+      throw new HttpsError("internal", "Failed to request exit.");
+    }
+  },
+);
+
+/**
+ * HTTP function called by Raspberry Pi when EXIT button is pressed.
+ * Opens exit barrier if pending exit exists.
+ */
+exports.confirmParkingExit = onRequest(
+  {
+    region: "europe-central2",
+  },
+  async (request, response) => {
+    const db = getFirestore("parking");
+
+    try {
+      // Get pending exit
+      const pendingDoc = await db.collection("PendingExit").doc("current").get();
+
+      if (!pendingDoc.exists) {
+        response.status(400).json({
+          success: false,
+          message: "No pending exit request.",
+        });
+        return;
+      }
+
+      const pendingData = pendingDoc.data();
+      const requestedAt = pendingData.requestedAt ? pendingData.requestedAt.toDate() : null;
+
+      // Check if within 1 minute
+      if (!requestedAt) {
+        response.status(400).json({
+          success: false,
+          message: "Invalid pending exit data.",
+        });
+        return;
+      }
+
+      const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
+      if (requestedAt < oneMinuteAgo) {
+        // Expired - delete pending exit
+        await db.collection("PendingExit").doc("current").delete();
+        response.status(400).json({
+          success: false,
+          message: "Exit request expired (1 minute timeout).",
+        });
+        return;
+      }
+
+      const ticketId = pendingData.ticketId;
+
+      // Update ticket status to completed
+      await db.collection("ParkingTickets").doc(ticketId).update({
+        status: "completed",
+        endTime: FieldValue.serverTimestamp(),
+      });
+
+      // Open exit barrier
+      await db.collection("Barrier").doc("exitBarrier").update({
+        isOpen: true,
+      });
+
+      // Delete pending exit
+      await db.collection("PendingExit").doc("current").delete();
+
+      logger.info(`Exit confirmed for ticket ${ticketId}`);
+      response.json({
+        success: true,
+        ticketId: ticketId,
+        message: "Exit barrier opened.",
+      });
+    } catch (error) {
+      logger.error("Error confirming parking exit", error);
+      response.status(500).json({
+        success: false,
+        message: "Internal error: " + error.message,
+      });
     }
   },
 );

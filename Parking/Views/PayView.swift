@@ -37,7 +37,7 @@ struct PayView: View {
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                         
-                        Text(String(format: "$%.2f", amount))
+                        Text(ParkingPriceCalculator.formatPrice(amount))
                             .font(.system(size: 40, weight: .bold))
                             .foregroundColor(.primary)
                     }

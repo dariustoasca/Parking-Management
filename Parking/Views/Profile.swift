@@ -155,9 +155,26 @@ struct ProfileView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
-        .background(cardBackground)
-        .cornerRadius(20)
-        .shadow(color: shadowColor, radius: 8, x: 0, y: 4)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(.ultraThinMaterial)
+                
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(colorScheme == .dark ? 0.15 : 0.5),
+                                Color.white.opacity(colorScheme == .dark ? 0.05 : 0.15)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
+        )
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.25 : 0.08), radius: 12, x: 0, y: 6)
     }
     
     // MARK: - Quick Stats
@@ -271,9 +288,26 @@ struct ProfileView: View {
                 }
                 .buttonStyle(.plain)
             }
-            .background(cardBackground)
-            .cornerRadius(16)
-            .shadow(color: shadowColor, radius: 5, x: 0, y: 2)
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(.ultraThinMaterial)
+                    
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(colorScheme == .dark ? 0.15 : 0.5),
+                                    Color.white.opacity(colorScheme == .dark ? 0.05 : 0.15)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                }
+            )
+            .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.25 : 0.08), radius: 12, x: 0, y: 6)
         }
     }
     

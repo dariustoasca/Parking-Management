@@ -1,5 +1,6 @@
 import SwiftUI
 import FirebaseFirestore
+import FirebaseFunctions
 import CoreImage.CIFilterBuiltins
 
 struct TicketDetailView: View {
@@ -12,6 +13,11 @@ struct TicketDetailView: View {
     @State private var barrierMessage = ""
     @State private var barrierOpening = false
     @State private var barrierSuccess = false
+    @State private var isPendingExit = false
+    @State private var exitRemainingTime = 60
+    @State private var exitTimer: Timer?
+    
+    private let functions = Functions.functions(region: "europe-central2")
     
     private let context = CIContext()
     private let filter = CIFilter.qrCodeGenerator()
@@ -61,10 +67,13 @@ struct TicketDetailView: View {
                         
                         // Details
                         VStack(alignment: .leading, spacing: 16) {
-                            DetailRow(icon: "calendar", title: "Date", value: ticket.startTime.formatted(date: .abbreviated, time: .omitted))
-                            DetailRow(icon: "clock", title: "Time In", value: ticket.startTime.formatted(date: .omitted, time: .shortened))
-                            DetailRow(icon: "dollarsign.circle.fill", title: "Amount", value: String(format: "$%.2f", ticket.amount))
-                            DetailRow(icon: "mappin.and.ellipse", title: "Spot", value: ticket.spotId)
+                            DetailRow(icon: "calendar", title: "Date In", value: ticket.startTime.formatted(date: .abbreviated, time: .shortened))
+                            if let endTime = ticket.endTime {
+                                DetailRow(icon: "calendar.badge.checkmark", title: "Date Out", value: endTime.formatted(date: .abbreviated, time: .shortened))
+                            }
+                            DetailRow(icon: "clock", title: "Time", value: formatDuration(from: ticket.startTime, to: ticket.endTime ?? Date()))
+                            DetailRow(icon: "dollarsign.circle.fill", title: "Amount", value: ParkingPriceCalculator.formatPrice(ParkingPriceCalculator.calculatePrice(from: ticket.startTime, to: ticket.endTime ?? Date())))
+                            DetailRow(icon: "mappin.and.ellipse", title: "Spot", value: formatSpotName(ticket.spotId))
                         }
                         .padding()
                         .background(Color(.secondarySystemBackground))
@@ -91,22 +100,37 @@ struct TicketDetailView: View {
                                     if barrierOpening {
                                         ProgressView()
                                             .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    } else if isPendingExit {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
                                     } else if barrierSuccess {
                                         Image(systemName: "checkmark.circle.fill")
                                             .font(.title3)
                                     }
                                     
-                                    Text(barrierSuccess ? "Barrier Opened!" : (barrierOpening ? "Opening..." : "Open Barrier"))
-                                        .font(.headline)
-                                        .fontWeight(barrierSuccess ? .bold : .regular)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        if isPendingExit {
+                                            Text("Waiting for Button...")
+                                                .font(.headline)
+                                            Text("\(exitRemainingTime)s - Press barrier button to exit")
+                                                .font(.caption)
+                                        } else if barrierSuccess {
+                                            Text("Barrier Opened!")
+                                                .font(.headline)
+                                                .fontWeight(.bold)
+                                        } else {
+                                            Text("Open Exit Barrier")
+                                                .font(.headline)
+                                        }
+                                    }
                                 }
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)
                                 .padding()
-                                .background(barrierSuccess ? Color.blue : Color.green)
+                                .background(isPendingExit ? Color.orange : (barrierSuccess ? Color.blue : Color.green))
                                 .cornerRadius(16)
                             }
-                            .disabled(barrierOpening || barrierSuccess)
+                            .disabled(barrierOpening || barrierSuccess || isPendingExit)
                             .padding(.horizontal)
                         }
                     }
@@ -127,7 +151,7 @@ struct TicketDetailView: View {
             }
             .sheet(isPresented: $showPayView) {
                 if let ticket = ticket {
-                    PayView(ticketId: ticketId, amount: ticket.amount) {
+                    PayView(ticketId: ticketId, amount: ParkingPriceCalculator.calculatePrice(from: ticket.startTime)) {
                         fetchTicket() // Refresh after payment
                     }
                 }
@@ -140,10 +164,30 @@ struct TicketDetailView: View {
     
     private func statusColor(_ status: String) -> Color {
         switch status {
-        case "active": return .blue
-        case "paid": return .green
+        case "active": return .green
+        case "paid": return .blue
         case "completed": return .gray
         default: return .primary
+        }
+    }
+    
+    private func formatSpotName(_ spotId: String) -> String {
+        // Extract just the number from "spot1", "spot2", etc.
+        if let number = spotId.last, number.isNumber {
+            return String(number)
+        }
+        return spotId
+    }
+    
+    private func formatDuration(from startTime: Date, to endTime: Date) -> String {
+        let interval = endTime.timeIntervalSince(startTime)
+        let hours = Int(interval) / 3600
+        let minutes = (Int(interval) % 3600) / 60
+        
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(minutes)m"
         }
     }
     
@@ -165,41 +209,55 @@ struct TicketDetailView: View {
     
     private func openBarrier() {
         barrierOpening = true
-        let db = Firestore.firestore(database: "parking")
+        isPendingExit = false
+        exitRemainingTime = 60
         
-        db.collection("Barrier").document("exitBarrier").updateData([
-            "isOpen": true,
-            "lastOpenedAt": FieldValue.serverTimestamp()
-        ]) { [self] error in
+        // Call the cloud function
+        functions.httpsCallable("requestParkingExit").call([:]) { [self] result, error in
             barrierOpening = false
             
             if let error = error {
-                print("Failed to open barrier: \(error.localizedDescription)")
-            } else {
-                barrierSuccess = true
-                print("Barrier opening... will close in 30 seconds")
-                
-                // Update ticket to completed
-                db.collection("ParkingTickets").document(ticketId).updateData(["status": "completed"])
-                
-                // Close barrier after 30 seconds
-                DispatchQueue.main.asyncAfter(deadline: .now() + 30) {
-                    db.collection("Barrier").document("exitBarrier").updateData([
-                        "isOpen": false
-                    ]) { error in
-                        if let error = error {
-                            print("Error closing barrier: \(error)")
-                        } else {
-                            print("Barrier closed automatically after 30 seconds")
-                        }
+                print("Error requesting exit: \(error.localizedDescription)")
+                barrierMessage = "Failed to request exit: \(error.localizedDescription)"
+                showingBarrierAlert = true
+                return
+            }
+            
+            // Start pending exit state with countdown
+            isPendingExit = true
+            startExitTimer()
+            print("Exit request successful, waiting for barrier button...")
+        }
+    }
+    
+    private func startExitTimer() {
+        exitTimer?.invalidate()
+        exitRemainingTime = 60
+        
+        // Listen for barrier opening
+        let db = Firestore.firestore(database: "parking")
+        db.collection("Barrier").document("exitBarrier")
+            .addSnapshotListener { [self] snapshot, error in
+                if let isOpen = snapshot?.data()?["isOpen"] as? Bool, isOpen {
+                    // Barrier opened!
+                    isPendingExit = false
+                    exitTimer?.invalidate()
+                    barrierSuccess = true
+                    
+                    // Refresh ticket and hide success after delay
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        fetchTicket()
+                        barrierSuccess = false
                     }
                 }
-                
-                // Hide success message and refresh after 3 seconds
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                    fetchTicket()
-                    barrierSuccess = false
-                }
+            }
+        
+        // Countdown timer
+        exitTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [self] _ in
+            exitRemainingTime -= 1
+            if exitRemainingTime <= 0 {
+                exitTimer?.invalidate()
+                isPendingExit = false
             }
         }
     }

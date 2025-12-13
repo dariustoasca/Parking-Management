@@ -38,12 +38,19 @@ struct Barrier: Identifiable, Codable {
 struct ParkingSpot: Identifiable, Codable {
     @DocumentID var id: String?
     let number: Int
-    let section: String
+    var section: String?  // Made optional - no longer required
     var occupied: Bool
     var assignedUserId: String?
     
     var displayName: String {
-        id ?? "spot\(section)\(number)"
+        // Extract number from ID like "spot11" -> "Spot 1", or use the number field
+        if let spotId = id, spotId.hasPrefix("spot") {
+            let numPart = spotId.dropFirst(4) // Remove "spot"
+            if let lastDigit = numPart.last {
+                return "Spot \(lastDigit)"
+            }
+        }
+        return "Spot \(number)"
     }
     
     enum CodingKeys: String, CodingKey {

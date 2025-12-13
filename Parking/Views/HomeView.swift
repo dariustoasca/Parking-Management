@@ -64,11 +64,123 @@ struct HomeView: View {
                         }
                     }
                     .padding(.top, 40)
-                    .padding(.bottom, 40)
+                    .padding(.bottom, 20)
                     
-                    // Barrier Button (only show if recently paid)
-                    if viewModel.canOpenBarrier {
+                    // Tariff Display
+                    Text(ParkingPriceCalculator.tariffText)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 20)
+                    
+                    // Enter Parking Button (only show if no active ticket)
+                    if viewModel.canEnterParking || viewModel.isPendingEntry || viewModel.entrySuccess {
                         Button(action: {
+                            HapticManager.impact(style: .medium)
+                            viewModel.requestParkingEntry()
+                        }) {
+                            ZStack(alignment: .leading) {
+                                // Frosted glass background
+                                RoundedRectangle(cornerRadius: 16)
+                                    .fill(.ultraThinMaterial)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 16)
+                                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                    )
+                                
+                                // Progress fill (for countdown)
+                                if viewModel.isPendingEntry {
+                                    GeometryReader { geometry in
+                                        RoundedRectangle(cornerRadius: 16)
+                                            .fill(
+                                                LinearGradient(
+                                                    colors: [.blue.opacity(0.6), .blue.opacity(0.3)],
+                                                    startPoint: .leading,
+                                                    endPoint: .trailing
+                                                )
+                                            )
+                                            .frame(width: geometry.size.width * CGFloat(viewModel.entryRemainingTime) / 60.0)
+                                            .animation(.linear(duration: 0.5), value: viewModel.entryRemainingTime)
+                                    }
+                                }
+                                
+                                // Success fill
+                                if viewModel.entrySuccess {
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [.green.opacity(0.6), .green.opacity(0.3)],
+                                                startPoint: .leading,
+                                                endPoint: .trailing
+                                            )
+                                        )
+                                }
+                                
+                                // Content
+                                HStack {
+                                    if viewModel.isPendingEntry {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: .primary))
+                                    } else if viewModel.entrySuccess {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .font(.title2)
+                                            .foregroundColor(.green)
+                                    } else {
+                                        Image(systemName: "car.fill")
+                                            .font(.title2)
+                                            .foregroundColor(.blue)
+                                    }
+                                    
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        if viewModel.entrySuccess {
+                                            Text("Entry Successful!")
+                                                .font(.headline)
+                                                .fontWeight(.bold)
+                                                .foregroundColor(.primary)
+                                            Text("Barrier will open shortly")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        } else if viewModel.isPendingEntry {
+                                            Text("Waiting for Button...")
+                                                .font(.headline)
+                                                .fontWeight(.bold)
+                                                .foregroundColor(.primary)
+                                            Text("\(viewModel.entryRemainingTime)s - Press barrier button")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        } else {
+                                            Text("Enter Parking")
+                                                .font(.headline)
+                                                .fontWeight(.bold)
+                                                .foregroundColor(.primary)
+                                            Text("Tap to request entry")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    if !viewModel.isPendingEntry && !viewModel.entrySuccess {
+                                        Image(systemName: "chevron.right")
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                .padding()
+                            }
+                            .frame(height: 70)
+                            .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 5)
+                        }
+                        .disabled(viewModel.isPendingEntry || viewModel.entrySuccess)
+                        .padding(.horizontal)
+                        .padding(.bottom, 10)
+                    }
+                    
+                    // Exit Barrier Button (show if recently paid OR pending exit OR barrier success)
+                    if viewModel.canOpenBarrier || viewModel.isPendingExit || viewModel.barrierSuccess {
+                        Button(action: {
+                            HapticManager.impact(style: .medium)
                             viewModel.openBarrier()
                         }) {
                             ZStack(alignment: .leading) {
@@ -80,23 +192,51 @@ struct HomeView: View {
                                             .stroke(Color.white.opacity(0.2), lineWidth: 1)
                                     )
                                 
-                                // Green progress fill (decreases over time)
+                                // Progress fill based on state
                                 GeometryReader { geometry in
-                                    RoundedRectangle(cornerRadius: 16)
-                                        .fill(
-                                            LinearGradient(
-                                                colors: viewModel.barrierSuccess ? [.blue, .blue.opacity(0.6)] : [.green, .green.opacity(0.6)],
-                                                startPoint: .leading,
-                                                endPoint: .trailing
+                                    if viewModel.isPendingExit {
+                                        // Orange progress for waiting (60s countdown)
+                                        RoundedRectangle(cornerRadius: 16)
+                                            .fill(
+                                                LinearGradient(
+                                                    colors: [.orange.opacity(0.6), .orange.opacity(0.3)],
+                                                    startPoint: .leading,
+                                                    endPoint: .trailing
+                                                )
                                             )
-                                        )
-                                        .frame(width: geometry.size.width * CGFloat(viewModel.remainingTime) / 15.0)
-                                        .animation(.linear(duration: 0.5), value: viewModel.remainingTime)
+                                            .frame(width: geometry.size.width * CGFloat(viewModel.exitRemainingTime) / 60.0)
+                                            .animation(.linear(duration: 0.5), value: viewModel.exitRemainingTime)
+                                    } else if viewModel.barrierSuccess {
+                                        // Blue fill for success
+                                        RoundedRectangle(cornerRadius: 16)
+                                            .fill(
+                                                LinearGradient(
+                                                    colors: [.blue.opacity(0.6), .blue.opacity(0.3)],
+                                                    startPoint: .leading,
+                                                    endPoint: .trailing
+                                                )
+                                            )
+                                    } else {
+                                        // Green progress for 15-min window
+                                        RoundedRectangle(cornerRadius: 16)
+                                            .fill(
+                                                LinearGradient(
+                                                    colors: [.green, .green.opacity(0.6)],
+                                                    startPoint: .leading,
+                                                    endPoint: .trailing
+                                                )
+                                            )
+                                            .frame(width: geometry.size.width * CGFloat(viewModel.remainingTime) / 15.0)
+                                            .animation(.linear(duration: 0.5), value: viewModel.remainingTime)
+                                    }
                                 }
                                 
                                 // Content
                                 HStack {
                                     if viewModel.barrierOpening {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: .primary))
+                                    } else if viewModel.isPendingExit {
                                         ProgressView()
                                             .progressViewStyle(CircularProgressViewStyle(tint: .primary))
                                     } else if viewModel.barrierSuccess {
@@ -110,16 +250,27 @@ struct HomeView: View {
                                     }
                                     
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text(viewModel.barrierSuccess ? "Barrier Opened!" : "Open Exit Barrier")
-                                            .font(.headline)
-                                            .fontWeight(.bold)
-                                            .foregroundColor(.primary)
-                                        
                                         if viewModel.barrierSuccess {
-                                            Text("Success - Drive safely!")
+                                            Text("Barrier Opened!")
+                                                .font(.headline)
+                                                .fontWeight(.bold)
+                                                .foregroundColor(.primary)
+                                            Text("Drive safely!")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        } else if viewModel.isPendingExit {
+                                            Text("Waiting for Button...")
+                                                .font(.headline)
+                                                .fontWeight(.bold)
+                                                .foregroundColor(.primary)
+                                            Text("\(viewModel.exitRemainingTime)s - Press barrier button")
                                                 .font(.caption)
                                                 .foregroundColor(.secondary)
                                         } else {
+                                            Text("Open Exit Barrier")
+                                                .font(.headline)
+                                                .fontWeight(.bold)
+                                                .foregroundColor(.primary)
                                             Text("\(viewModel.remainingTime) min remaining")
                                                 .font(.caption)
                                                 .foregroundColor(.secondary)
@@ -128,7 +279,7 @@ struct HomeView: View {
                                     
                                     Spacer()
                                     
-                                    if !viewModel.barrierSuccess && !viewModel.barrierOpening {
+                                    if !viewModel.barrierSuccess && !viewModel.barrierOpening && !viewModel.isPendingExit {
                                         Image(systemName: "chevron.right")
                                             .foregroundColor(.secondary)
                                     }
@@ -138,41 +289,9 @@ struct HomeView: View {
                             .frame(height: 70)
                             .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 5)
                         }
-                        .disabled(viewModel.barrierOpening || viewModel.barrierSuccess)
+                        .disabled(viewModel.barrierOpening || viewModel.barrierSuccess || viewModel.isPendingExit)
                         .padding(.horizontal)
                         .padding(.bottom, 10)
-                    }
-                    
-                    // Barrier Success Message
-                    if viewModel.barrierSuccess {
-                        HStack(spacing: 12) {
-                            Image(systemName: "checkmark.seal.fill")
-                                .font(.title2)
-                                .foregroundColor(.green)
-                            
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Barrier Successfully Opened!")
-                                    .font(.headline)
-                                    .fontWeight(.bold)
-                                    .foregroundColor(.primary)
-                                
-                                Text("Barrier will remain open for 30 seconds")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            
-                            Spacer()
-                        }
-                        .padding()
-                        .background(.ultraThinMaterial)
-                        .cornerRadius(16)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16)
-                                .stroke(Color.green.opacity(0.3), lineWidth: 2)
-                        )
-                        .padding(.horizontal)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .animation(.spring(), value: viewModel.barrierSuccess)
                     }
                     
                     // Ticket Status
@@ -183,7 +302,7 @@ struct HomeView: View {
                                     Text("Active Ticket")
                                         .font(.headline)
                                         .foregroundColor(.primary)
-                                    Text("Spot \(ticket.spotId)")
+                                    Text(formatSpotName(ticket.spotId))
                                         .font(.title3)
                                         .fontWeight(.bold)
                                         .foregroundColor(.blue)
@@ -218,7 +337,7 @@ struct HomeView: View {
                                 .foregroundColor(.secondary)
                         }
                         .padding(.horizontal)
-                        .padding(.top, (viewModel.canOpenBarrier || viewModel.barrierSuccess) ? 40 : 0)
+                        .padding(.top, 30)
                     }
                     
                     Spacer()
@@ -238,5 +357,13 @@ struct HomeView: View {
     
     private var backgroundGradient: some View {
         BackgroundView()
+    }
+    
+    private func formatSpotName(_ spotId: String) -> String {
+        // Extract just the number from "spot1", "spot2", etc.
+        if let number = spotId.last, number.isNumber {
+            return String(number)
+        }
+        return spotId
     }
 }

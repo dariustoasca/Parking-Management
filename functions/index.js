@@ -410,7 +410,8 @@ exports.requestParkingEntry = onCall(
 
 /**
  * HTTP function called by Raspberry Pi when ENTER button is pressed.
- * Opens enter barrier and creates ticket if pending entry exists.
+ * Opens enter barrier and creates ticket with pending spot assignment.
+ * Spot will be assigned later when sensor detects occupation.
  */
 exports.confirmParkingEntry = onRequest(
   {
@@ -456,30 +457,13 @@ exports.confirmParkingEntry = onRequest(
 
       const userId = pendingData.pendingUserId;
 
-      // Find first available spot
-      const availableSpots = await db.collection("ParkingSpots")
-        .where("occupied", "==", false)
-        .limit(1)
-        .get();
-
-      if (availableSpots.empty) {
-        response.status(400).json({
-          success: false,
-          message: "No parking spots available.",
-        });
-        return;
-      }
-
-      const spotDoc = availableSpots.docs[0];
-      const spotId = spotDoc.id;
-
       // Generate unique ticket ID
       const ticketId = await generateUniqueTicketId(db);
 
-      // Create ticket
+      // Create ticket with pending spot (will be assigned by sensor)
       await db.collection("ParkingTickets").doc(ticketId).set({
         userId: userId,
-        spotId: spotId,
+        spotId: "pending",
         startTime: FieldValue.serverTimestamp(),
         endTime: null,
         status: "active",
@@ -495,15 +479,118 @@ exports.confirmParkingEntry = onRequest(
       // Delete pending entry
       await db.collection("PendingEntry").doc("current").delete();
 
-      logger.info(`Entry confirmed for user ${userId}, ticket ${ticketId}, spot ${spotId}`);
+      logger.info(`Entry confirmed for user ${userId}, ticket ${ticketId}, awaiting spot assignment`);
+      response.json({
+        success: true,
+        ticketId: ticketId,
+        spotId: "pending",
+        message: "Barrier opened, ticket created. Awaiting spot assignment from sensor.",
+      });
+    } catch (error) {
+      logger.error("Error confirming parking entry", error);
+      response.status(500).json({
+        success: false,
+        message: "Internal error: " + error.message,
+      });
+    }
+  },
+);
+
+/**
+ * HTTP function called by Raspberry Pi when a parking spot sensor detects occupation.
+ * Assigns the spot to the most recent pending ticket and marks the spot as occupied.
+ *
+ * @param {string} spotId - Query parameter: the spot ID (e.g., "spot1", "spot11", "1", etc.)
+ */
+exports.assignParkingSpot = onRequest(
+  {
+    region: "europe-central2",
+  },
+  async (request, response) => {
+    const db = getFirestore("parking");
+    let spotId = request.query.spotId || request.body.spotId ||
+      request.query.spotNumber || request.body.spotNumber;
+
+    if (!spotId) {
+      response.status(400).json({
+        success: false,
+        message: "Missing spotId or spotNumber parameter.",
+      });
+      return;
+    }
+
+    // If just a number is passed, prepend "spot"
+    if (!spotId.startsWith("spot")) {
+      spotId = `spot${spotId}`;
+    }
+
+    try {
+      // Verify spot exists
+      const spotDoc = await db.collection("ParkingSpots").doc(spotId).get();
+      if (!spotDoc.exists) {
+        response.status(400).json({
+          success: false,
+          message: `Spot ${spotId} does not exist.`,
+        });
+        return;
+      }
+
+      // Find tickets with pending spot assignment (simple query, no index needed)
+      const pendingTickets = await db.collection("ParkingTickets")
+        .where("spotId", "==", "pending")
+        .get();
+
+      if (pendingTickets.empty) {
+        response.status(400).json({
+          success: false,
+          message: "No pending ticket awaiting spot assignment.",
+        });
+        return;
+      }
+
+      // Get the most recent one by checking startTime manually
+      let latestTicket = null;
+      let latestTime = null;
+      pendingTickets.docs.forEach((doc) => {
+        const data = doc.data();
+        const startTime = data.startTime ? data.startTime.toDate() : null;
+        if (!latestTime || (startTime && startTime > latestTime)) {
+          latestTime = startTime;
+          latestTicket = { id: doc.id, data: data };
+        }
+      });
+
+      if (!latestTicket) {
+        response.status(400).json({
+          success: false,
+          message: "No valid pending ticket found.",
+        });
+        return;
+      }
+
+      const ticketId = latestTicket.id;
+      const userId = latestTicket.data.userId;
+
+      // Update ticket with the actual spot
+      await db.collection("ParkingTickets").doc(ticketId).update({
+        spotId: spotId,
+      });
+
+      // Mark spot as occupied
+      await db.collection("ParkingSpots").doc(spotId).update({
+        occupied: true,
+        assignedUserId: userId,
+      });
+
+      logger.info(`Spot ${spotId} assigned to ticket ${ticketId} for user ${userId}`);
       response.json({
         success: true,
         ticketId: ticketId,
         spotId: spotId,
-        message: "Barrier opened, ticket created.",
+        message: `Spot ${spotId} assigned to ticket ${ticketId}.`,
       });
     } catch (error) {
-      logger.error("Error confirming parking entry", error);
+      logger.error("Error assigning parking spot", error);
       response.status(500).json({
         success: false,
         message: "Internal error: " + error.message,

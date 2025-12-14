@@ -20,6 +20,8 @@ struct ProfileView: View {
     @State private var showGradientPicker = false
     @State private var showUsernameSheet = false
     @State private var showPaymentMethodsSheet = false
+    @State private var lightsOn = false
+    @State private var lightsListener: ListenerRegistration?
     
     @Environment(\.colorScheme) private var colorScheme
     
@@ -90,9 +92,11 @@ struct ProfileView: View {
             if let userId = authManager.currentUserUID {
                 profilePicManager.startListeningToProfile(userId: userId)
             }
+            startListeningToLights()
         }
         .onDisappear {
             profilePicManager.stopListening()
+            lightsListener?.remove()
         }
     }
     
@@ -196,6 +200,21 @@ struct ProfileView: View {
             
             VStack(spacing: 0) {
                 // Face ID Toggle Removed
+                
+                // Parking Lights Toggle
+                SettingsToggleRow(
+                    icon: "lightbulb.fill",
+                    title: "Parking Lights",
+                    color: lightsOn ? .yellow : .gray,
+                    isOn: Binding(
+                        get: { lightsOn },
+                        set: { newValue in
+                            toggleParkingLights(newValue)
+                        }
+                    )
+                )
+                
+                Divider().padding(.leading, 56)
                 
                 // Change Username
                 SettingsButtonRow(
@@ -355,6 +374,31 @@ struct ProfileView: View {
                 Color(red: 0.11, green: 0.11, blue: 0.13)
             } else {
                 Color(.systemBackground)
+            }
+        }
+    }
+    
+    // MARK: - Parking Lights Functions
+    private func startListeningToLights() {
+        let db = Firestore.firestore(database: "parking")
+        lightsListener = db.collection("Parking").document("SystemSettings")
+            .addSnapshotListener { snapshot, error in
+                if let data = snapshot?.data(),
+                   let isOn = data["lightsOn"] as? Bool {
+                    lightsOn = isOn
+                }
+            }
+    }
+    
+    private func toggleParkingLights(_ newValue: Bool) {
+        HapticManager.impact(style: .light)
+        let db = Firestore.firestore(database: "parking")
+        db.collection("Parking").document("SystemSettings").updateData([
+            "lightsOn": newValue,
+            "lastUpdated": FieldValue.serverTimestamp()
+        ]) { error in
+            if let error = error {
+                print("Error toggling lights: \(error)")
             }
         }
     }

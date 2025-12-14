@@ -1,6 +1,4 @@
-# ![Logo](https://github.com/user-attachments/assets/a0d4e94b-3c4a-442d-9f7d-31bc228a3093)
-
-# Smart Parking System
+# <img src="https://github.com/user-attachments/assets/a0d4e94b-3c4a-442d-9f7d-31bc228a3093" height="45" style="vertical-align:bottom"/> Smart Parking System
 
 ## Project Overview
 
@@ -13,7 +11,7 @@ The solution consists of three main components:
 
 ---
 
-## Video Demonstrations
+## App Demos
 
 ### 1. Application Walkthrough
 This demonstration covers the complete user journey within the iOS app, including secure login, dashboard navigation, and the payment process for a parking session.
@@ -84,3 +82,4 @@ The physical prototype simulates a 5-spot parking lot.
 * **Input:** 2x Push Buttons (Entry/Exit confirmation).
 * **Output:** 2x Servo Motors (Barriers) and RGB LED Modules (Status Indicators).
 * **Sensing:** 5x Infrared Obstacle Avoidance Sensors (one per spot).
+* **Info:** 5x LEDs over each parking spot indicatin free spots.

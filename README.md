@@ -13,7 +13,7 @@ The solution consists of three main components:
 
 ## App Demos
 
-### 1. Application Walkthrough
+### 1. App Walkthrough
 This covers the complete interface within the iOS app, including secure login, dashboard, navigation, and the payment process for a parking ticket.
 
 https://github.com/user-attachments/assets/24c76141-376c-4316-acad-056197410827

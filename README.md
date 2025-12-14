@@ -1,4 +1,4 @@
-# <img src="https://github.com/user-attachments/assets/a0d4e94b-3c4a-442d-9f7d-31bc228a3093" height="45" style="vertical-align:bottom"/> Smart Parking System
+# <img src="https://github.com/user-attachments/assets/a0d4e94b-3c4a-442d-9f7d-31bc228a3093" height="40" style="vertical-align:bottom"/> Smart Parking System
 
 ## Project Overview
 

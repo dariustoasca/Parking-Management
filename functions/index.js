@@ -1,10 +1,13 @@
-/**
- * Import function triggers from their respective submodules:
+/*
+ * Smart Parking System - Cloud Functions
+ * Author: Darius Toasca
+ * Course: CN Project
  *
- * const {onCall} = require("firebase-functions/v2/https");
- * const {onDocumentWritten} = require("firebase-functions/v2/firestore");
+ * This file contains all the Firebase Cloud Functions for my parking management
+ * system. The functions handle everything from barrier control to ticket
+ * management and payment processing.
  *
- * See a full list of supported triggers at https://firebase.google.com/docs/functions
+ * The system uses the "parking" Firestore database instance.
  */
 
 const { setGlobalOptions } = require("firebase-functions/v2");
@@ -20,16 +23,17 @@ const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https")
 
 initializeApp();
 
-// Set global options for v2 functions
+// Using europe-central2 region since it's closest to my location (Romania)
 setGlobalOptions({ maxInstances: 10, region: "europe-central2" });
 
-// Create and deploy your first functions
-// https://firebase.google.com/docs/functions/get-started
 
-/**
- * Checks the time and toggles parking lights.
- * Runs every hour.
- */
+// ============================================
+// PARKING LIGHTS SYSTEM
+// ============================================
+// This section handles automatic lighting control.
+// The lights turn on at night (6 PM to 6 AM) and off during the day.
+// A scheduled function runs every hour to check and update the lights.
+
 exports.toggleParkingLights = onSchedule({
   schedule: "every 1 hours",
   region: "europe-central2",
@@ -37,19 +41,17 @@ exports.toggleParkingLights = onSchedule({
   const now = new Date();
   const hour = now.getHours();
 
-  // Assume night is between 18:00 (6 PM) and 06:00 (6 AM)
+  // Night time is between 18:00 and 06:00
   const isNight = hour >= 18 || hour < 6;
 
   logger.info(`Checking time: ${hour}:00. Is Night? ${isNight}`);
 
   try {
-    // Update Firestore with the new state
-    // The physical system can listen to this document
     const db = getFirestore("parking");
     await db.collection("Parking")
       .doc("SystemSettings").set({
         lightsOn: isNight,
-        lastUpdated: new Date(), // Use JS Date or FieldValue
+        lastUpdated: new Date(),
       }, { merge: true });
 
     logger.info(`Parking lights turned ${isNight ? "ON" : "OFF"}`);
@@ -58,9 +60,14 @@ exports.toggleParkingLights = onSchedule({
   }
 });
 
-/**
- * Automatically closes the barrier after 5 seconds.
- */
+
+// ============================================
+// BARRIER CONTROL SYSTEM
+// ============================================
+// The barriers are connected to Raspberry Pi devices that communicate with
+// these functions. When a barrier opens, it automatically closes after 5 seconds
+// for safety reasons.
+
 exports.autoCloseBarrier = onDocumentUpdated(
   {
     document: "Barrier/{barrierId}",
@@ -71,26 +78,29 @@ exports.autoCloseBarrier = onDocumentUpdated(
     const newValue = event.data.after.data();
     const previousValue = event.data.before.data();
 
-    // Only trigger if it changed from closed to open
+    // Only trigger when barrier changes from closed to open
     if (newValue.isOpen === true && previousValue.isOpen === false) {
       logger.info(
         `Barrier ${event.params.barrierId} opened. Closing in 5s.`,
       );
 
-      // Wait 5 seconds
+      // Wait 5 seconds then close
       await new Promise((resolve) => setTimeout(resolve, 5000));
 
-      // Close the barrier
       await event.data.after.ref.update({ isOpen: false });
       logger.info(`Barrier ${event.params.barrierId} closed automatically.`);
     }
   },
 );
 
-/**
- * HTTP function to seed the database with parking spots.
- * Deletes all existing spots and creates exactly 5 new ones.
- */
+
+// ============================================
+// DATABASE SEEDING FUNCTIONS
+// ============================================
+// These functions are for testing and initial setup. They populate the
+// database with sample data for development purposes.
+
+// Creates exactly 5 parking spots (spot1 through spot5)
 exports.seedParkingSpots = onRequest(
   {
     region: "europe-central2",
@@ -99,7 +109,7 @@ exports.seedParkingSpots = onRequest(
     const db = getFirestore("parking");
 
     try {
-      // First, delete all existing parking spots
+      // Clear existing spots first
       const existingSpots = await db.collection("ParkingSpots").get();
       const deleteBatch = db.batch();
       existingSpots.docs.forEach((doc) => {
@@ -108,7 +118,7 @@ exports.seedParkingSpots = onRequest(
       await deleteBatch.commit();
       logger.info(`Deleted ${existingSpots.docs.length} existing parking spots`);
 
-      // Now create exactly 5 new spots
+      // Create 5 new spots
       const createBatch = db.batch();
       for (let i = 1; i <= 5; i++) {
         const spotId = `spot${i}`;
@@ -129,10 +139,7 @@ exports.seedParkingSpots = onRequest(
   },
 );
 
-/**
- * HTTP function to seed the database with parking tickets.
- * Run this once to populate the ParkingTickets collection.
- */
+// Creates sample tickets for testing
 exports.seedTickets = onRequest(
   {
     region: "europe-central2",
@@ -141,7 +148,6 @@ exports.seedTickets = onRequest(
     const db = getFirestore("parking");
     const batch = db.batch();
 
-    // Use a fixed user ID for testing or get from request query
     const userId = request.query.userId || "testUser123";
 
     const tickets = [
@@ -149,7 +155,7 @@ exports.seedTickets = onRequest(
         id: "TKT-2025-001",
         userId: userId,
         spotId: "spot1",
-        startTime: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
+        startTime: new Date(Date.now() - 2 * 60 * 60 * 1000),
         endTime: null,
         status: "active",
         amount: 5.0,
@@ -194,10 +200,14 @@ exports.seedTickets = onRequest(
   },
 );
 
-/**
- * Triggers when a ParkingTicket is created or updated.
- * Updates the corresponding ParkingSpot's occupied status.
- */
+
+// ============================================
+// PARKING SPOT MANAGEMENT
+// ============================================
+// This trigger automatically updates parking spot availability when
+// tickets are created or their status changes. It keeps the spot
+// status in sync with the ticket status.
+
 exports.manageParkingSpotOnTicket = onDocumentWritten(
   {
     document: "ParkingTickets/{ticketId}",
@@ -209,25 +219,23 @@ exports.manageParkingSpotOnTicket = onDocumentWritten(
     const snapshot = event.data;
 
     if (!snapshot) {
-      return; // No data
+      return;
     }
 
     const newData = snapshot.after.data();
     const oldData = snapshot.before.data();
 
-    // Handle deletion
+    // Handle ticket deletion
     if (!newData) {
-      // Ticket deleted, maybe free the spot?
-      // For now, let's assume we only care about active/paid transitions
       return;
     }
 
     const spotId = newData.spotId;
-    if (!spotId) return;
+    if (!spotId || spotId === "pending") return;
 
     const spotRef = db.collection("ParkingSpots").doc(spotId);
 
-    // If ticket is newly created as active OR status changed to active
+    // Ticket is active -> mark spot as occupied
     if (newData.status === "active" &&
       (!oldData || oldData.status !== "active")) {
       await spotRef.update({
@@ -241,7 +249,7 @@ exports.manageParkingSpotOnTicket = onDocumentWritten(
       ["paid", "completed"].includes(newData.status) &&
       (!oldData || !["paid", "completed"].includes(oldData.status))
     ) {
-      // If ticket status changed to paid or completed
+      // Ticket paid/completed -> free up the spot
       await spotRef.update({
         occupied: false,
         assignedUserId: null,
@@ -251,15 +259,18 @@ exports.manageParkingSpotOnTicket = onDocumentWritten(
   },
 );
 
-/**
- * Callable function to save a payment card securely.
- */
+
+// ============================================
+// PAYMENT SYSTEM
+// ============================================
+// Handles saving credit card details securely. For the prototype,
+// we're only storing the last 4 digits and card type.
+
 exports.savePaymentCard = onCall(
   {
     region: "europe-central2",
   },
   async (request) => {
-    // Check authentication
     if (!request.auth) {
       throw new HttpsError(
         "unauthenticated",
@@ -287,7 +298,6 @@ exports.savePaymentCard = onCall(
     const db = getFirestore("parking");
 
     try {
-      // Save to Users/{userId}/CreditCardDetails
       const cardRef = await db.collection("Users").doc(userId)
         .collection("CreditCardDetails").add({
           userId: userId,
@@ -309,14 +319,24 @@ exports.savePaymentCard = onCall(
   },
 );
 
-// ============================================
-// BARRIER ENTRY/EXIT SYSTEM
-// ============================================
 
+// ============================================
+// ENTRY/EXIT BARRIER SYSTEM
+// ============================================
+// This is the main logic for handling parking entry and exit.
+// The flow works like this:
+// 1. User presses "Enter Parking" in the app
+// 2. requestParkingEntry registers them as "pending"
+// 3. User has 60 seconds to press the physical button on the Raspberry Pi
+// 4. confirmParkingEntry creates the ticket and opens the barrier
+// 5. Sensor detects where they parked -> assignParkingSpot updates the ticket
+// 6. When leaving, similar flow with requestParkingExit and confirmParkingExit
+
+// Helper function to generate unique ticket IDs
+// Format: TKT-YEAR-XXX where XXX is a random 3-digit number
 /**
- * Helper function to generate a unique ticket ID.
- * Format: TKT-{YEAR}-{3 random digits}
- * @param {FirebaseFirestore.Firestore} db - Firestore database instance
+ * Generates a unique ticket ID in the format TKT-YEAR-XXX
+ * @param {Object} db - Firestore database instance
  * @return {Promise<string>} Unique ticket ID
  */
 async function generateUniqueTicketId(db) {
@@ -326,10 +346,10 @@ async function generateUniqueTicketId(db) {
   let attempts = 0;
 
   while (!isUnique && attempts < 10) {
-    const randomNum = Math.floor(Math.random() * 900) + 100; // 100-999
+    const randomNum = Math.floor(Math.random() * 900) + 100;
     ticketId = `TKT-${year}-${randomNum}`;
 
-    // Check if this ID already exists
+    // Make sure this ID doesn't already exist
     const existing = await db.collection("ParkingTickets").doc(ticketId).get();
     if (!existing.exists) {
       isUnique = true;
@@ -337,18 +357,15 @@ async function generateUniqueTicketId(db) {
     attempts++;
   }
 
+  // Fallback to timestamp if random IDs keep colliding
   if (!isUnique) {
-    // Fallback: use timestamp
     ticketId = `TKT-${year}-${Date.now().toString().slice(-6)}`;
   }
 
   return ticketId;
 }
 
-/**
- * Callable function for user to request parking entry.
- * Registers the user as pending entry (1 minute timeout).
- */
+// Called from the app when user wants to enter the parking
 exports.requestParkingEntry = onCall(
   {
     region: "europe-central2",
@@ -365,7 +382,7 @@ exports.requestParkingEntry = onCall(
     const db = getFirestore("parking");
 
     try {
-      // Check if user already has an active ticket
+      // Check if they already have an active ticket
       const activeTickets = await db.collection("ParkingTickets")
         .where("userId", "==", userId)
         .where("status", "==", "active")
@@ -379,7 +396,7 @@ exports.requestParkingEntry = onCall(
         );
       }
 
-      // Check if there are available spots
+      // Make sure there's at least one free spot
       const availableSpots = await db.collection("ParkingSpots")
         .where("occupied", "==", false)
         .limit(1)
@@ -392,7 +409,7 @@ exports.requestParkingEntry = onCall(
         );
       }
 
-      // Register pending entry
+      // Register as pending - Raspberry Pi will be listening for this
       await db.collection("PendingEntry").doc("current").set({
         pendingUserId: userId,
         requestedAt: FieldValue.serverTimestamp(),
@@ -408,11 +425,8 @@ exports.requestParkingEntry = onCall(
   },
 );
 
-/**
- * HTTP function called by Raspberry Pi when ENTER button is pressed.
- * Opens enter barrier and creates ticket with pending spot assignment.
- * Spot will be assigned later when sensor detects occupation.
- */
+// Called by Raspberry Pi when the physical ENTER button is pressed
+// Creates the ticket and opens the entry barrier
 exports.confirmParkingEntry = onRequest(
   {
     region: "europe-central2",
@@ -421,7 +435,6 @@ exports.confirmParkingEntry = onRequest(
     const db = getFirestore("parking");
 
     try {
-      // Get pending entry
       const pendingDoc = await db.collection("PendingEntry").doc("current").get();
 
       if (!pendingDoc.exists) {
@@ -435,7 +448,6 @@ exports.confirmParkingEntry = onRequest(
       const pendingData = pendingDoc.data();
       const requestedAt = pendingData.requestedAt ? pendingData.requestedAt.toDate() : null;
 
-      // Check if within 1 minute
       if (!requestedAt) {
         response.status(400).json({
           success: false,
@@ -444,9 +456,9 @@ exports.confirmParkingEntry = onRequest(
         return;
       }
 
+      // Check if request is still valid (within 60 seconds)
       const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
       if (requestedAt < oneMinuteAgo) {
-        // Expired - delete pending entry
         await db.collection("PendingEntry").doc("current").delete();
         response.status(400).json({
           success: false,
@@ -456,11 +468,9 @@ exports.confirmParkingEntry = onRequest(
       }
 
       const userId = pendingData.pendingUserId;
-
-      // Generate unique ticket ID
       const ticketId = await generateUniqueTicketId(db);
 
-      // Create ticket with pending spot (will be assigned by sensor)
+      // Create ticket - spot will be assigned when sensor detects the car
       await db.collection("ParkingTickets").doc(ticketId).set({
         userId: userId,
         spotId: "pending",
@@ -471,12 +481,12 @@ exports.confirmParkingEntry = onRequest(
         qrCodeData: `${ticketId}-QR`,
       });
 
-      // Open enter barrier
+      // Open the barrier
       await db.collection("Barrier").doc("enterBarrier").update({
         isOpen: true,
       });
 
-      // Delete pending entry
+      // Clear the pending entry
       await db.collection("PendingEntry").doc("current").delete();
 
       logger.info(`Entry confirmed for user ${userId}, ticket ${ticketId}, awaiting spot assignment`);
@@ -496,12 +506,14 @@ exports.confirmParkingEntry = onRequest(
   },
 );
 
-/**
- * HTTP function called by Raspberry Pi when a parking spot sensor detects occupation.
- * Assigns the spot to the most recent pending ticket and marks the spot as occupied.
- *
- * @param {string} spotId - Query parameter: the spot ID (e.g., "spot1", "spot11", "1", etc.)
- */
+
+// ============================================
+// SENSOR-BASED SPOT ASSIGNMENT
+// ============================================
+// Called by Raspberry Pi when a presence sensor detects a car parked.
+// The Arduino sensors send signals to the Pi, which then calls this function
+// with the spot number to assign it to the waiting ticket.
+
 exports.assignParkingSpot = onRequest(
   {
     region: "europe-central2",
@@ -519,13 +531,13 @@ exports.assignParkingSpot = onRequest(
       return;
     }
 
-    // If just a number is passed, prepend "spot"
+    // Handle both "3" and "spot3" formats
     if (!spotId.startsWith("spot")) {
       spotId = `spot${spotId}`;
     }
 
     try {
-      // Verify spot exists
+      // Make sure the spot exists in our database
       const spotDoc = await db.collection("ParkingSpots").doc(spotId).get();
       if (!spotDoc.exists) {
         response.status(400).json({
@@ -535,7 +547,7 @@ exports.assignParkingSpot = onRequest(
         return;
       }
 
-      // Find tickets with pending spot assignment (simple query, no index needed)
+      // Find tickets waiting for spot assignment
       const pendingTickets = await db.collection("ParkingTickets")
         .where("spotId", "==", "pending")
         .get();
@@ -548,7 +560,7 @@ exports.assignParkingSpot = onRequest(
         return;
       }
 
-      // Get the most recent one by checking startTime manually
+      // Get the most recent ticket (in case there are multiple)
       let latestTicket = null;
       let latestTime = null;
       pendingTickets.docs.forEach((doc) => {
@@ -571,12 +583,12 @@ exports.assignParkingSpot = onRequest(
       const ticketId = latestTicket.id;
       const userId = latestTicket.data.userId;
 
-      // Update ticket with the actual spot
+      // Update the ticket with the actual spot
       await db.collection("ParkingTickets").doc(ticketId).update({
         spotId: spotId,
       });
 
-      // Mark spot as occupied
+      // Mark the spot as occupied
       await db.collection("ParkingSpots").doc(spotId).update({
         occupied: true,
         assignedUserId: userId,
@@ -599,10 +611,14 @@ exports.assignParkingSpot = onRequest(
   },
 );
 
-/**
- * Callable function for user to request parking exit.
- * Registers the user as pending exit (1 minute timeout).
- */
+
+// ============================================
+// EXIT SYSTEM
+// ============================================
+// Similar to entry, but for leaving the parking.
+// User pays their ticket in the app, then requests exit.
+// They have 60 seconds to press the physical exit button.
+
 exports.requestParkingExit = onCall(
   {
     region: "europe-central2",
@@ -619,7 +635,7 @@ exports.requestParkingExit = onCall(
     const db = getFirestore("parking");
 
     try {
-      // Find the user's paid ticket (ready to exit)
+      // They need to have a paid ticket to exit
       const paidTickets = await db.collection("ParkingTickets")
         .where("userId", "==", userId)
         .where("status", "==", "paid")
@@ -635,7 +651,7 @@ exports.requestParkingExit = onCall(
 
       const ticketDoc = paidTickets.docs[0];
 
-      // Register pending exit
+      // Register as pending exit
       await db.collection("PendingExit").doc("current").set({
         pendingUserId: userId,
         ticketId: ticketDoc.id,
@@ -652,10 +668,7 @@ exports.requestParkingExit = onCall(
   },
 );
 
-/**
- * HTTP function called by Raspberry Pi when EXIT button is pressed.
- * Opens exit barrier if pending exit exists.
- */
+// Called by Raspberry Pi when the physical EXIT button is pressed
 exports.confirmParkingExit = onRequest(
   {
     region: "europe-central2",
@@ -664,7 +677,6 @@ exports.confirmParkingExit = onRequest(
     const db = getFirestore("parking");
 
     try {
-      // Get pending exit
       const pendingDoc = await db.collection("PendingExit").doc("current").get();
 
       if (!pendingDoc.exists) {
@@ -678,7 +690,6 @@ exports.confirmParkingExit = onRequest(
       const pendingData = pendingDoc.data();
       const requestedAt = pendingData.requestedAt ? pendingData.requestedAt.toDate() : null;
 
-      // Check if within 1 minute
       if (!requestedAt) {
         response.status(400).json({
           success: false,
@@ -687,9 +698,9 @@ exports.confirmParkingExit = onRequest(
         return;
       }
 
+      // Check 60 second timeout
       const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
       if (requestedAt < oneMinuteAgo) {
-        // Expired - delete pending exit
         await db.collection("PendingExit").doc("current").delete();
         response.status(400).json({
           success: false,
@@ -700,7 +711,7 @@ exports.confirmParkingExit = onRequest(
 
       const ticketId = pendingData.ticketId;
 
-      // Update ticket status to completed
+      // Mark ticket as completed
       await db.collection("ParkingTickets").doc(ticketId).update({
         status: "completed",
         endTime: FieldValue.serverTimestamp(),
@@ -711,7 +722,7 @@ exports.confirmParkingExit = onRequest(
         isOpen: true,
       });
 
-      // Delete pending exit
+      // Clear pending exit
       await db.collection("PendingExit").doc("current").delete();
 
       logger.info(`Exit confirmed for ticket ${ticketId}`);

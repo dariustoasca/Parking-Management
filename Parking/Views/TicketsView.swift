@@ -1,4 +1,16 @@
+/*
+ * TicketsView.swift
+ * Smart Parking System
+ * Author: Darius Toasca
+ * 
+ * Displays the user's parking ticket history.
+ * Shows both active tickets and completed/paid tickets in separate sections.
+ * Prices are calculated dynamically using ParkingPriceCalculator.
+ */
+
 import SwiftUI
+import FirebaseFirestore
+import FirebaseAuth
 
 struct TicketsView: View {
     @StateObject private var viewModel = TicketsViewModel()

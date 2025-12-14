@@ -1,3 +1,13 @@
+/*
+ * TicketDetailView.swift
+ * Smart Parking System
+ * Author: Darius Toasca
+ * 
+ * This view shows the full details of a parking ticket including
+ * the QR code, entry/exit times, price, and parking spot.
+ * Users can pay their ticket or open the exit barrier from here.
+ */
+
 import SwiftUI
 import FirebaseFirestore
 import FirebaseFunctions
@@ -17,8 +27,15 @@ struct TicketDetailView: View {
     @State private var exitRemainingTime = 60
     @State private var exitTimer: Timer?
     
+    // Firebase Functions instance - using europe-central2 region
     private let functions = Functions.functions(region: "europe-central2")
     
+    // ============================================
+    // QR CODE GENERATION
+    // ============================================
+    // Using CoreImage to generate QR codes. The CIFilter qrCodeGenerator
+    // takes a string and converts it to a QR code image.
+    // CIContext is used to render the final image.
     private let context = CIContext()
     private let filter = CIFilter.qrCodeGenerator()
     
@@ -27,7 +44,9 @@ struct TicketDetailView: View {
             ScrollView {
                 if let ticket = ticket {
                     VStack(spacing: 30) {
-                        // Ticket Header
+                        
+                        // MARK: - Ticket Header
+                        // Shows the ticket ID and current status
                         VStack(spacing: 8) {
                             Text("Parking Ticket")
                                 .font(.title2)
@@ -48,11 +67,13 @@ struct TicketDetailView: View {
                         }
                         .padding(.top, 20)
                         
-                        // QR Code
+                        // MARK: - QR Code Display
+                        // The QR code contains the ticket ID which can be scanned
+                        // by the parking staff to verify the ticket
                         VStack(spacing: 16) {
                             Image(uiImage: generateQRCode(from: ticketId))
                                 .resizable()
-                                .interpolation(.none)
+                                .interpolation(.none) // keeps QR sharp when scaled
                                 .scaledToFit()
                                 .frame(width: 200, height: 200)
                                 .padding(20)
@@ -65,7 +86,8 @@ struct TicketDetailView: View {
                         }
                         .shadow(radius: 10)
                         
-                        // Details
+                        // MARK: - Ticket Information
+                        // Date In, Date Out, Duration, Amount, and Spot number
                         VStack(alignment: .leading, spacing: 16) {
                             DetailRow(icon: "calendar", title: "Date In", value: ticket.startTime.formatted(date: .abbreviated, time: .shortened))
                             if let endTime = ticket.endTime {
@@ -82,7 +104,9 @@ struct TicketDetailView: View {
                         
                         Spacer()
                         
-                        // Action Buttons
+                        // MARK: - Action Buttons
+                        // Active tickets show "Pay Now"
+                        // Paid tickets show "Open Exit Barrier"
                         if ticket.status == "active" {
                             Button(action: { showPayView = true }) {
                                 Text("Pay Now")
@@ -95,6 +119,7 @@ struct TicketDetailView: View {
                             }
                             .padding(.horizontal)
                         } else if ticket.status == "paid" {
+                            // Exit barrier button with different states
                             Button(action: openBarrier) {
                                 HStack {
                                     if barrierOpening {
@@ -152,7 +177,7 @@ struct TicketDetailView: View {
             .sheet(isPresented: $showPayView) {
                 if let ticket = ticket {
                     PayView(ticketId: ticketId, amount: ParkingPriceCalculator.calculatePrice(from: ticket.startTime)) {
-                        fetchTicket() // Refresh after payment
+                        fetchTicket()
                     }
                 }
             }
@@ -162,6 +187,9 @@ struct TicketDetailView: View {
         }
     }
     
+    // MARK: - Helper Functions
+    
+    // Returns the appropriate color for each ticket status
     private func statusColor(_ status: String) -> Color {
         switch status {
         case "active": return .green
@@ -171,14 +199,15 @@ struct TicketDetailView: View {
         }
     }
     
+    // Extracts just the number from spot IDs like "spot1", "spot2"
     private func formatSpotName(_ spotId: String) -> String {
-        // Extract just the number from "spot1", "spot2", etc.
         if let number = spotId.last, number.isNumber {
             return String(number)
         }
         return spotId
     }
     
+    // Formats the parking duration as "Xh Ym"
     private func formatDuration(from startTime: Date, to endTime: Date) -> String {
         let interval = endTime.timeIntervalSince(startTime)
         let hours = Int(interval) / 3600
@@ -191,6 +220,9 @@ struct TicketDetailView: View {
         }
     }
     
+    // MARK: - Firestore Operations
+    
+    // Fetches the ticket data from Firestore
     private func fetchTicket() {
         let db = Firestore.firestore(database: "parking")
         db.collection("ParkingTickets").document(ticketId).getDocument { snapshot, error in
@@ -207,12 +239,18 @@ struct TicketDetailView: View {
         }
     }
     
+    // MARK: - Exit Barrier Flow
+    // When user presses "Open Exit Barrier":
+    // 1. Call requestParkingExit cloud function
+    // 2. Show countdown while waiting for physical button press
+    // 3. Listen for barrier opening confirmation
+    // 4. Show success state when barrier opens
+    
     private func openBarrier() {
         barrierOpening = true
         isPendingExit = false
         exitRemainingTime = 60
         
-        // Call the cloud function
         functions.httpsCallable("requestParkingExit").call([:]) { [self] result, error in
             barrierOpening = false
             
@@ -223,7 +261,6 @@ struct TicketDetailView: View {
                 return
             }
             
-            // Start pending exit state with countdown
             isPendingExit = true
             startExitTimer()
             print("Exit request successful, waiting for barrier button...")
@@ -234,17 +271,15 @@ struct TicketDetailView: View {
         exitTimer?.invalidate()
         exitRemainingTime = 60
         
-        // Listen for barrier opening
+        // Listen for barrier to open
         let db = Firestore.firestore(database: "parking")
         db.collection("Barrier").document("exitBarrier")
             .addSnapshotListener { [self] snapshot, error in
                 if let isOpen = snapshot?.data()?["isOpen"] as? Bool, isOpen {
-                    // Barrier opened!
                     isPendingExit = false
                     exitTimer?.invalidate()
                     barrierSuccess = true
                     
-                    // Refresh ticket and hide success after delay
                     DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                         fetchTicket()
                         barrierSuccess = false
@@ -252,7 +287,7 @@ struct TicketDetailView: View {
                 }
             }
         
-        // Countdown timer
+        // Countdown timer - 60 seconds to press the button
         exitTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [self] _ in
             exitRemainingTime -= 1
             if exitRemainingTime <= 0 {
@@ -261,6 +296,11 @@ struct TicketDetailView: View {
             }
         }
     }
+    
+    // MARK: - QR Code Generation
+    // Uses CoreImage's built-in QR code generator.
+    // The filter takes a string as input and outputs a CIImage.
+    // We then convert it to a CGImage and finally to UIImage.
     
     private func generateQRCode(from string: String) -> UIImage {
         filter.message = Data(string.utf8)
@@ -271,9 +311,13 @@ struct TicketDetailView: View {
             }
         }
         
+        // Fallback icon if QR generation fails
         return UIImage(systemName: "xmark.circle") ?? UIImage()
     }
 }
+
+// MARK: - Detail Row Component
+// Reusable row for displaying ticket information
 
 struct DetailRow: View {
     let icon: String

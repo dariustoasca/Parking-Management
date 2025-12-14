@@ -1,47 +1,57 @@
+/*
+ * ParkingPriceCalculator.swift
+ * Smart Parking System
+ * Author: Darius Toasca
+ * 
+ * This utility handles all the pricing logic for parking tickets.
+ * Prices are in Romanian Lei (RON).
+ * 
+ * TARIFF STRUCTURE:
+ * - Up to 30 minutes: 6 Lei
+ * - Up to 1 hour: 10 Lei  
+ * - Up to 2 hours: 18 Lei
+ * - Up to 24 hours: 50 Lei
+ * - Over 24 hours: 50 Lei per day (rounded up)
+ *   Example: 25 hours = 2 days = 100 Lei
+ */
+
 import Foundation
 
-/// Calculates parking price based on duration
-/// Tariffs:
-/// - 30 minutes: 6 Lei
-/// - 1 hour: 10 Lei
-/// - 2 hours: 18 Lei
-/// - 24 hours: 50 Lei
 struct ParkingPriceCalculator {
     
-    /// Calculate price based on start time to now (for active tickets)
+    // Calculate price from start time until now (for active tickets)
     static func calculatePrice(from startTime: Date) -> Double {
         return calculatePrice(from: startTime, to: Date())
     }
     
-    /// Calculate price based on duration between two times
+    // Calculate price based on total parking duration
     static func calculatePrice(from startTime: Date, to endTime: Date) -> Double {
         let minutes = endTime.timeIntervalSince(startTime) / 60
         
         if minutes <= 0 {
             return 0
         } else if minutes <= 30 {
-            return 6  // 30 min: 6 Lei
+            return 6  // 30 min
         } else if minutes <= 60 {
-            return 10  // 1 hour: 10 Lei
+            return 10  // 1 hour
         } else if minutes <= 120 {
-            return 18  // 2 hours: 18 Lei
-        } else if minutes <= 1440 {  // Up to 24 hours
-            return 50  // 24 hours: 50 Lei
+            return 18  // 2 hours
+        } else if minutes <= 1440 {  // 24 hours = 1440 minutes
+            return 50  // full day rate
         } else {
-            // Over 24 hours: charge per day (ceiling)
-            // 25 hours = 2 days = 100 Lei
+            // Multi-day parking - charge per day
             let hours = minutes / 60
             let days = ceil(hours / 24)
-            return days * 50  // 50 Lei per day
+            return days * 50
         }
     }
     
-    /// Format price in Lei currency
+    // Formats the amount with "Lei" suffix
     static func formatPrice(_ amount: Double) -> String {
         return String(format: "%.0f Lei", amount)
     }
     
-    /// Tariff display text for home screen
+    // Text displayed on the home screen showing all tariffs
     static var tariffText: String {
         return "30 min: 6 Lei • 1h: 10 Lei • 2h: 18 Lei • 24h: 50 Lei"
     }

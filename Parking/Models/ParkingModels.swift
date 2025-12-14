@@ -1,13 +1,31 @@
+/*
+ * ParkingModels.swift
+ * Smart Parking System
+ * Author: Darius Toasca
+ * 
+ * This file contains all the data models used in the app.
+ * They conform to Codable for Firestore decoding and Identifiable for SwiftUI lists.
+ * 
+ * MODELS:
+ * - ParkingTicket: represents a parking session
+ * - Barrier: enter/exit barrier state
+ * - ParkingSpot: individual parking space
+ * - PaymentCard: saved credit card info (only last 4 digits stored)
+ */
+
 import Foundation
 import FirebaseFirestore
 
+// MARK: - Parking Ticket
+// Represents a single parking session from entry to exit
+
 struct ParkingTicket: Identifiable, Codable {
-    @DocumentID var id: String?
+    @DocumentID var id: String?  // Firestore document ID (e.g., TKT-2025-123)
     let userId: String
     let spotId: String
     let startTime: Date
-    var endTime: Date?
-    var status: String // "active", "paid", "completed"
+    var endTime: Date?  // nil while parking, set when paid
+    var status: String  // "active" -> "paid" -> "completed"
     var amount: Double
     var qrCodeData: String?
     
@@ -23,10 +41,13 @@ struct ParkingTicket: Identifiable, Codable {
     }
 }
 
+// MARK: - Barrier
+// Represents the physical entry/exit barriers controlled by Raspberry Pi
+
 struct Barrier: Identifiable, Codable {
     @DocumentID var id: String?
     var isOpen: Bool
-    let name: String // "enterBarrier", "exitBarrier"
+    let name: String  // "enterBarrier" or "exitBarrier"
     
     enum CodingKeys: String, CodingKey {
         case id
@@ -35,17 +56,20 @@ struct Barrier: Identifiable, Codable {
     }
 }
 
+// MARK: - Parking Spot
+// Represents one of the 5 physical parking spaces in the lot
+
 struct ParkingSpot: Identifiable, Codable {
     @DocumentID var id: String?
     let number: Int
-    var section: String?  // Made optional - no longer required
+    var section: String?  // legacy field, no longer used
     var occupied: Bool
     var assignedUserId: String?
     
+    // Friendly display name for UI
     var displayName: String {
-        // Extract number from ID like "spot11" -> "Spot 1", or use the number field
         if let spotId = id, spotId.hasPrefix("spot") {
-            let numPart = spotId.dropFirst(4) // Remove "spot"
+            let numPart = spotId.dropFirst(4)
             if let lastDigit = numPart.last {
                 return "Spot \(lastDigit)"
             }
@@ -62,16 +86,20 @@ struct ParkingSpot: Identifiable, Codable {
     }
 }
 
+// MARK: - Payment Card
+// Stores saved credit card info. For security, only the last 4 digits are saved.
+// Full card numbers are never stored in our database.
+
 struct PaymentCard: Identifiable, Codable {
     @DocumentID var id: String?
     let userId: String
-    let last4Digits: String  // Only store last 4 for security
-    let cardType: String     // "Visa", "Mastercard", "Amex", etc.
-    let cardHolderName: String?  // Optional for backwards compatibility
+    let last4Digits: String
+    let cardType: String  // Visa, Mastercard, etc.
+    let cardHolderName: String?
     let expiryMonth: String
     let expiryYear: String
     var isDefault: Bool
-    let createdAt: Date?  // Optional for backwards compatibility
+    let createdAt: Date?
     
     var displayName: String {
         "\(cardType) •••• \(last4Digits)"
@@ -93,7 +121,7 @@ struct PaymentCard: Identifiable, Codable {
         case createdAt
     }
     
-    // Custom decoder for backwards compatibility
+    // Custom decoder handles missing fields in old data
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         

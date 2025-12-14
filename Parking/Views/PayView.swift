@@ -1,3 +1,14 @@
+/*
+ * PayView.swift
+ * Smart Parking System
+ * Author: Darius Toasca
+ * 
+ * This view handles the payment flow for parking tickets.
+ * Users can pay with saved cards or enter new card details.
+ * The card info is saved securely (only last 4 digits stored).
+ * After successful payment, the ticket status changes to "paid".
+ */
+
 import SwiftUI
 import FirebaseFirestore
 import FirebaseAuth

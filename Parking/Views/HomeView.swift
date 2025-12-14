@@ -1,4 +1,24 @@
+/*
+ * HomeView.swift
+ * Smart Parking System
+ * Author: Darius Toasca
+ * 
+ * Main dashboard screen showing:
+ * - Available parking spots count
+ * - Current tariff information
+ * - Active ticket status
+ * - Enter/Exit parking buttons
+ * 
+ * The entry/exit flows work with physical Raspberry Pi buttons:
+ * 1. User presses button in app
+ * 2. Has 60 seconds to press physical barrier button
+ * 3. Barrier opens and ticket is created/completed
+ */
+
 import SwiftUI
+import FirebaseAuth
+import FirebaseFirestore
+import FirebaseFunctions
 
 struct HomeView: View {
     @StateObject private var viewModel = HomeViewModel()

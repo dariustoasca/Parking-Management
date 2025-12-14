@@ -1,3 +1,15 @@
+/*
+ * HomeViewModel.swift
+ * Smart Parking System
+ * Author: Darius Toasca
+ * 
+ * This is the main view model for the home screen. It manages:
+ * - Parking spot availability
+ * - Active ticket status
+ * - Entry/exit button flows
+ * - Real-time Firestore listeners
+ */
+
 import Foundation
 import FirebaseFirestore
 import FirebaseFunctions
@@ -5,110 +17,138 @@ import Combine
 
 @MainActor
 class HomeViewModel: ObservableObject {
-    // Removed availableSpotsCount, replaced by occupiedSpots and availableSpots
+    
+    // MARK: - Published State
+    // These properties update the UI automatically when changed
+    
     @Published var activeTicket: ParkingTicket?
     @Published var userName: String = "User"
     @Published var recentlyPaidTicket: ParkingTicket?
     @Published var occupiedSpots: [ParkingSpot] = []
     @Published var barrierOpening = false
     @Published var barrierSuccess = false
-    @Published var remainingTime: Int = 0 // Added to track occupied spots
+    @Published var remainingTime: Int = 0  // minutes left for exit window
     
-    // Entry-related state
+    // Entry flow state
     @Published var isPendingEntry = false
     @Published var entryRemainingTime: Int = 60
     @Published var entryRequestError: String?
     @Published var entrySuccess = false
     
-    // Exit-related state (new flow)
+    // Exit flow state
     @Published var isPendingExit = false
     @Published var exitRemainingTime: Int = 60
-
-    let totalSpots = 5 // 1 column x 5 rows
+    
+    // MARK: - Constants
+    
+    let totalSpots = 5  // physical parking spots in the lot
+    
+    // MARK: - Private Properties
     
     private var entryTimer: Timer?
     private var exitTimer: Timer?
-
+    private let db = Firestore.firestore(database: "parking")
+    private lazy var functions = Functions.functions(region: "europe-central2")
+    
+    // Firestore listeners
+    private var spotsListener: ListenerRegistration?
+    private var ticketListener: ListenerRegistration?
+    private var paidTicketListener: ListenerRegistration?
+    private var pendingEntryListener: ListenerRegistration?
+    
+    // MARK: - Computed Properties
+    
+    // Percentage of spots currently occupied (for progress bar)
     var occupancyRate: Double {
         guard totalSpots > 0 else { return 0 }
         return Double(occupiedSpots.count) / Double(totalSpots)
     }
-
+    
+    // How many spots are free
     var availableSpots: Int {
         totalSpots - occupiedSpots.count
     }
-
+    
+    // Show exit button if ticket was paid within last 15 minutes
     var canOpenBarrier: Bool {
         guard let ticket = recentlyPaidTicket,
               let paidAt = ticket.endTime else { return false }
-
+        
         let fifteenMinutesAgo = Date().addingTimeInterval(-15 * 60)
         return paidAt > fifteenMinutesAgo && !barrierSuccess
     }
     
+    // Show enter button only when appropriate
+    // Hidden if: already has ticket, pending entry, entry success, no spots,
+    // exit flow active, or barrier just opened
     var canEnterParking: Bool {
-        return activeTicket == nil && !isPendingEntry && !entrySuccess && availableSpots > 0 && !canOpenBarrier && !barrierSuccess && !isPendingExit
+        return activeTicket == nil && !isPendingEntry && !entrySuccess &&
+               availableSpots > 0 && !canOpenBarrier && !barrierSuccess && !isPendingExit
     }
     
+    // Updates the minutes remaining in exit window
     func updateRemainingTime() {
         guard let ticket = recentlyPaidTicket,
-              let paidAt = ticket.endTime else { 
+              let paidAt = ticket.endTime else {
             remainingTime = 0
-            return 
+            return
         }
         
         let fifteenMinutesAfterPayment = paidAt.addingTimeInterval(15 * 60)
         remainingTime = max(0, Int(fifteenMinutesAfterPayment.timeIntervalSince(Date()) / 60))
     }
-
-    private let db = Firestore.firestore(database: "parking")
-    private lazy var functions = Functions.functions(region: "europe-central2")
-    // Removed cancellables
-    private var spotsListener: ListenerRegistration?
-    private var ticketListener: ListenerRegistration?
-    private var paidTicketListener: ListenerRegistration? // Added for recently paid tickets
-    private var pendingEntryListener: ListenerRegistration?
-
+    
+    // MARK: - Initialization
+    
     init() {
-        // Start listening when initialized
+        // Listeners are started when user logs in
     }
-
-    func startListening(userId: String?) { // Changed userId to optional
+    
+    // MARK: - Listener Setup
+    // These functions set up real-time listeners to Firestore collections.
+    // The listeners update our @Published properties when data changes.
+    
+    func startListening(userId: String?) {
         guard let uid = userId else { return }
-
-        listenToOccupiedSpots() // Renamed from listenToSpots
+        
+        listenToOccupiedSpots()
         listenToActiveTicket(userId: uid)
-        listenToRecentlyPaidTicket(userId: uid) // Added new listener
+        listenToRecentlyPaidTicket(userId: uid)
         listenToPendingEntry(userId: uid)
         fetchUserName(userId: uid)
     }
-
+    
     func stopListening() {
         spotsListener?.remove()
         ticketListener?.remove()
-        paidTicketListener?.remove() // Added to remove paid ticket listener
+        paidTicketListener?.remove()
         pendingEntryListener?.remove()
         entryTimer?.invalidate()
         exitTimer?.invalidate()
-        // Removed setting listeners to nil, as remove() is sufficient
     }
-
-    private func listenToOccupiedSpots() { // Renamed from listenToSpots
+    
+    // MARK: - Spot Availability Listener
+    // Tracks which spots are currently occupied
+    
+    private func listenToOccupiedSpots() {
         spotsListener = db.collection("ParkingSpots")
-            .whereField("occupied", isEqualTo: true) // Changed to listen for occupied spots
+            .whereField("occupied", isEqualTo: true)
             .addSnapshotListener { [weak self] snapshot, error in
                 guard let self = self else { return }
                 if let error = error {
                     print("Error listening to spots: \(error)")
                     return
                 }
-
+                
                 self.occupiedSpots = snapshot?.documents.compactMap { doc in
                     try? doc.data(as: ParkingSpot.self)
                 } ?? []
             }
     }
-
+    
+    // MARK: - Active Ticket Listener
+    // Watches for user's active parking ticket
+    
     private func listenToActiveTicket(userId: String) {
         ticketListener = db.collection("ParkingTickets")
             .whereField("userId", isEqualTo: userId)
@@ -120,16 +160,18 @@ class HomeViewModel: ObservableObject {
                     print("Error listening to tickets: \(error)")
                     return
                 }
-
+                
                 if let document = snapshot?.documents.first {
                     do {
                         self.activeTicket = try document.data(as: ParkingTicket.self)
-                        // If we just got a ticket, entry was successful
+                        
+                        // Entry was successful if we were waiting and got a ticket
                         if self.isPendingEntry {
                             self.isPendingEntry = false
                             self.entrySuccess = true
                             self.entryTimer?.invalidate()
-                            // Hide success after 5 seconds
+                            
+                            // Hide success message after 5 seconds
                             DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
                                 self.entrySuccess = false
                             }
@@ -142,6 +184,9 @@ class HomeViewModel: ObservableObject {
                 }
             }
     }
+    
+    // MARK: - Pending Entry Listener
+    // Watches if user has requested entry but hasn't pressed button yet
     
     private func listenToPendingEntry(userId: String) {
         pendingEntryListener = db.collection("PendingEntry").document("current")
@@ -159,16 +204,18 @@ class HomeViewModel: ObservableObject {
                 } else {
                     // No pending entry for us
                     if self.isPendingEntry && self.activeTicket == nil {
-                        // Entry expired without ticket creation
                         self.isPendingEntry = false
                         self.entryTimer?.invalidate()
                     }
                 }
             }
     }
-
+    
+    // MARK: - Paid Ticket Listener
+    // Watches for recently paid tickets to show exit button
+    // Ticket must be paid within last 15 minutes
+    
     private func listenToRecentlyPaidTicket(userId: String) {
-        // Listen to all paid tickets for this user (no time filter in query)
         paidTicketListener = db.collection("ParkingTickets")
             .whereField("userId", isEqualTo: userId)
             .whereField("status", isEqualTo: "paid")
@@ -179,23 +226,22 @@ class HomeViewModel: ObservableObject {
                     print("Error listening to paid tickets: \(error)")
                     return
                 }
-
+                
                 if let document = snapshot?.documents.first {
                     do {
                         let ticket = try document.data(as: ParkingTicket.self)
-                        // Set endTime from paidAt timestamp
+                        
                         if let paidAt = document.data()["paidAt"] as? Timestamp {
                             let paidAtDate = paidAt.dateValue()
                             let fifteenMinutesAgo = Date().addingTimeInterval(-15 * 60)
                             
-                            // Check if ticket is still within 15-minute window
                             if paidAtDate > fifteenMinutesAgo {
                                 var updatedTicket = ticket
                                 updatedTicket.endTime = paidAtDate
                                 self.recentlyPaidTicket = updatedTicket
                                 self.updateRemainingTime()
                             } else {
-                                // Ticket has expired - update status
+                                // Ticket expired - mark as expired in database
                                 self.db.collection("ParkingTickets").document(document.documentID).updateData([
                                     "status": "expired"
                                 ])
@@ -215,7 +261,8 @@ class HomeViewModel: ObservableObject {
                 }
             }
     }
-
+    
+    // Fetches user's display name for greeting
     private func fetchUserName(userId: String) {
         db.collection("Users").document(userId).getDocument { [weak self] snapshot, error in
             guard let self = self else { return }
@@ -227,7 +274,9 @@ class HomeViewModel: ObservableObject {
         }
     }
     
-    // MARK: - Entry Functions
+    // MARK: - Entry Flow
+    // User taps "Enter Parking" -> calls cloud function -> waits for button press
+    // Flow: requestParkingEntry -> 60 second countdown -> confirmParkingEntry (Raspberry Pi)
     
     func requestParkingEntry() {
         isPendingEntry = true
@@ -245,7 +294,6 @@ class HomeViewModel: ObservableObject {
                     return
                 }
                 
-                // Start countdown timer
                 self.startEntryTimer()
                 print("Entry request successful, waiting for barrier button...")
             }
@@ -255,6 +303,8 @@ class HomeViewModel: ObservableObject {
     private func startEntryTimer() {
         entryRemainingTime = 60
         entryTimer?.invalidate()
+        
+        // Countdown 60 seconds
         entryTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self = self else { return }
@@ -267,14 +317,15 @@ class HomeViewModel: ObservableObject {
         }
     }
     
-    // MARK: - Exit Functions (Updated to use new cloud function)
-
+    // MARK: - Exit Flow
+    // User taps "Open Exit Barrier" -> calls cloud function -> waits for button press
+    // Flow: requestParkingExit -> 60 second countdown -> confirmParkingExit (Raspberry Pi)
+    
     func openBarrier() {
         barrierOpening = true
         isPendingExit = true
         exitRemainingTime = 60
         
-        // Call the new cloud function
         functions.httpsCallable("requestParkingExit").call([:]) { [weak self] result, error in
             guard let self = self else { return }
             
@@ -287,7 +338,6 @@ class HomeViewModel: ObservableObject {
                     return
                 }
                 
-                // Start exit timer
                 self.startExitTimer()
                 print("Exit request successful, waiting for barrier button...")
             }
@@ -297,6 +347,8 @@ class HomeViewModel: ObservableObject {
     private func startExitTimer() {
         exitRemainingTime = 60
         exitTimer?.invalidate()
+        
+        // Countdown 60 seconds
         exitTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self = self else { return }
@@ -308,7 +360,7 @@ class HomeViewModel: ObservableObject {
             }
         }
         
-        // Also listen for barrier opening
+        // Listen for barrier to actually open
         db.collection("Barrier").document("exitBarrier")
             .addSnapshotListener { [weak self] snapshot, error in
                 guard let self = self else { return }
@@ -319,7 +371,7 @@ class HomeViewModel: ObservableObject {
                         self.exitTimer?.invalidate()
                         self.barrierSuccess = true
                         
-                        // Hide success after 10 seconds
+                        // Hide success and clear ticket after 10 seconds
                         DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
                             self.recentlyPaidTicket = nil
                             self.barrierSuccess = false

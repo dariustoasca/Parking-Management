@@ -18,10 +18,15 @@ This covers the complete interface within the iOS app, including secure login, d
 
 https://github.com/user-attachments/assets/24c76141-376c-4316-acad-056197410827
 
-### 2. Hardware & Ticket Generation Logic
-This video is simulating the physical button presses. It shows how a request from the app triggers the physical barrier on the hardware model, creating a ticket in the database.
+### 2. Full Project Demo
+This is a complete demo from entry of the parking to exit
 
-https://github.com/user-attachments/assets/43b844ab-b6d4-41ce-806e-8288803c1887
+https://github.com/user-attachments/assets/55dc975f-2da3-4a0e-9215-93aa5b67a352
+
+### 3. Full Parking Case
+Here is a demo if the parking is fully occupied, as shown in the demo, the open barrier button does not appear anymore
+
+https://github.com/user-attachments/assets/02c96b7d-4b2d-4c5e-9561-5cbd3a1e8b1c
 
 ---
 
@@ -79,7 +84,16 @@ Costs are calculated dynamically on the client side using the `ParkingPriceCalcu
 The physical prototype simulates a 5-spot parking lot.
 
 * **Computing:** Raspberry Pi 4 (Main Controller) and Arduino Uno (Sensor Hub).
-* **Input:** 2x Push Buttons (Entry/Exit confirmation).
 * **Output:** 2x Servo Motors (Barriers) and RGB LED Modules (Status Indicators).
-* **Sensing:** 5x Infrared Obstacle Avoidance Sensors (one per spot).
+* **Sensing:** 7x Infrared Obstacle Avoidance Sensors (one per spot and for barriers)
 * **Info:** 5x LEDs over each parking spot indicating free spots.
+* One Relay connected to some batteries controls the night time lighting
+
+### Some Photos from the Development Phase
+![1](https://github.com/user-attachments/assets/d96f22c5-e892-4d64-b745-6789841b0ee5)
+![2](https://github.com/user-attachments/assets/7df72a3d-ca36-465e-9fac-9c27cc6f48e4)
+![3](https://github.com/user-attachments/assets/1ab64a60-cf60-4575-92dd-f53e24e6708f)
+![4](https://github.com/user-attachments/assets/e77b58a9-6a4d-4842-bbb2-ac315040fa8d)
+![5](https://github.com/user-attachments/assets/2afa4be7-95ae-41a3-a02b-88a7175084cf)
+![6](https://github.com/user-attachments/assets/4487e2e4-fb16-496d-a2ae-84f1c2ea7cc6)
+![IMG_7103](https://github.com/user-attachments/assets/28cf02f8-4497-4c05-b1ac-a01e1e5d2622)

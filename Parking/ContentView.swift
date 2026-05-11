@@ -31,6 +31,16 @@ struct ContentView: View {
                 .accentColor(.blue)
                 .environmentObject(authManager)
                 .environmentObject(dashboardVM)
+                .onChange(of: authManager.isAuthenticated) { _, isAuth in
+                    if isAuth, let uid = authManager.currentUserUID {
+                        dashboardVM.loadDashboardData(userUID: uid)
+                    }
+                }
+                .onAppear {
+                    if let uid = authManager.currentUserUID {
+                        dashboardVM.loadDashboardData(userUID: uid)
+                    }
+                }
             } else {
                 LoginView()
                     .environmentObject(authManager)

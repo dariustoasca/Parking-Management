@@ -356,8 +356,11 @@ class AuthenticationManager: ObservableObject {
                 "displayName": name
             ])
             
-            // Reload user data to refresh UI
-            loadUserData(uid: uid)
+            // Update local data immediately so UI reflects the change
+            if var data = currentUserData {
+                data["displayName"] = name
+                currentUserData = data
+            }
             
             isLoading = false
         } catch {

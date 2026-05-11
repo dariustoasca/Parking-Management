@@ -55,6 +55,8 @@ class HomeViewModel: ObservableObject {
     private var ticketListener: ListenerRegistration?
     private var paidTicketListener: ListenerRegistration?
     private var pendingEntryListener: ListenerRegistration?
+    private var exitBarrierListener: ListenerRegistration?
+    private var isListening = false
     
     // MARK: - Computed Properties
     
@@ -110,6 +112,8 @@ class HomeViewModel: ObservableObject {
     
     func startListening(userId: String?) {
         guard let uid = userId else { return }
+        guard !isListening else { return }
+        isListening = true
         
         listenToOccupiedSpots()
         listenToActiveTicket(userId: uid)
@@ -123,8 +127,10 @@ class HomeViewModel: ObservableObject {
         ticketListener?.remove()
         paidTicketListener?.remove()
         pendingEntryListener?.remove()
+        exitBarrierListener?.remove()
         entryTimer?.invalidate()
         exitTimer?.invalidate()
+        isListening = false
     }
     
     // MARK: - Spot Availability Listener
@@ -361,7 +367,8 @@ class HomeViewModel: ObservableObject {
         }
         
         // Listen for barrier to actually open
-        db.collection("Barrier").document("exitBarrier")
+        exitBarrierListener?.remove()
+        exitBarrierListener = db.collection("Barrier").document("exitBarrier")
             .addSnapshotListener { [weak self] snapshot, error in
                 guard let self = self else { return }
                 
@@ -370,6 +377,7 @@ class HomeViewModel: ObservableObject {
                         self.isPendingExit = false
                         self.exitTimer?.invalidate()
                         self.barrierSuccess = true
+                        self.exitBarrierListener?.remove()
                         
                         // Hide success and clear ticket after 10 seconds
                         DispatchQueue.main.asyncAfter(deadline: .now() + 10) {

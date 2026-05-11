@@ -231,7 +231,7 @@ struct LoginView: View {
 
 struct ResetPasswordView: View {
     @State private var email = ""
-    @Environment(\.presentationMode) var presentationMode
+    @Environment(\.dismiss) var dismiss
     @State private var showingAlert = false
     @State private var alertMessage = ""
     
@@ -270,11 +270,11 @@ struct ResetPasswordView: View {
             }
             .padding(.top, 50)
             .navigationBarItems(trailing: Button("Close") {
-                presentationMode.wrappedValue.dismiss()
+                dismiss()
             })
             .alert(isPresented: $showingAlert) {
                 Alert(title: Text("Notice"), message: Text(alertMessage), dismissButton: .default(Text("OK")) {
-                    presentationMode.wrappedValue.dismiss()
+                    dismiss()
                 })
             }
         }

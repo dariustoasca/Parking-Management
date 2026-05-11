@@ -26,6 +26,7 @@ struct TicketDetailView: View {
     @State private var isPendingExit = false
     @State private var exitRemainingTime = 60
     @State private var exitTimer: Timer?
+    @State private var exitBarrierListener: ListenerRegistration?
     
     // Firebase Functions instance - using europe-central2 region
     private let functions = Functions.functions(region: "europe-central2")
@@ -137,7 +138,7 @@ struct TicketDetailView: View {
                                         if isPendingExit {
                                             Text("Waiting for Button...")
                                                 .font(.headline)
-                                            Text("\(exitRemainingTime)s - Press barrier button to exit")
+                                            Text("\(exitRemainingTime)s - Stand In Front Of The Barrier To Exit")
                                                 .font(.caption)
                                         } else if barrierSuccess {
                                             Text("Barrier Opened!")
@@ -173,6 +174,10 @@ struct TicketDetailView: View {
             }
             .onAppear {
                 fetchTicket()
+            }
+            .onDisappear {
+                exitBarrierListener?.remove()
+                exitTimer?.invalidate()
             }
             .sheet(isPresented: $showPayView) {
                 if let ticket = ticket {
@@ -273,26 +278,32 @@ struct TicketDetailView: View {
         
         // Listen for barrier to open
         let db = Firestore.firestore(database: "parking")
-        db.collection("Barrier").document("exitBarrier")
-            .addSnapshotListener { [self] snapshot, error in
+        exitBarrierListener?.remove()
+        exitBarrierListener = db.collection("Barrier").document("exitBarrier")
+            .addSnapshotListener { snapshot, error in
                 if let isOpen = snapshot?.data()?["isOpen"] as? Bool, isOpen {
-                    isPendingExit = false
-                    exitTimer?.invalidate()
-                    barrierSuccess = true
-                    
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                        fetchTicket()
-                        barrierSuccess = false
+                    Task { @MainActor in
+                        isPendingExit = false
+                        exitTimer?.invalidate()
+                        barrierSuccess = true
+                        exitBarrierListener?.remove()
+                        
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                            fetchTicket()
+                            barrierSuccess = false
+                        }
                     }
                 }
             }
         
         // Countdown timer - 60 seconds to press the button
-        exitTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [self] _ in
-            exitRemainingTime -= 1
-            if exitRemainingTime <= 0 {
-                exitTimer?.invalidate()
-                isPendingExit = false
+        exitTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+            Task { @MainActor in
+                exitRemainingTime -= 1
+                if exitRemainingTime <= 0 {
+                    exitTimer?.invalidate()
+                    isPendingExit = false
+                }
             }
         }
     }

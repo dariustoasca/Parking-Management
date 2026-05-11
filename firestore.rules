@@ -3,17 +3,50 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // This rule allows anyone with your Firestore database reference to view, edit,
-    // and delete all data in your Firestore database. It is useful for getting
-    // started, but it is configured to expire after 30 days because it
-    // leaves your app open to attackers. At that time, all client
-    // requests to your Firestore database will be denied.
-    //
-    // Make sure to write security rules for your app before that time, or else
-    // all client requests to your Firestore database will be denied until you Update
-    // your rules
-    match /{document=**} {
-      allow read, write: if request.time < timestamp.date(2026, 1, 5);
+    // Users collection - authenticated users can read any profile,
+    // but only update their own document
+    match /Users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+
+      // Credit card subcollection - only the card owner can access
+      match /CreditCardDetails/{cardId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // Parking spots - any authenticated user can read,
+    // writes are handled by Cloud Functions
+    match /ParkingSpots/{spotId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    // Parking tickets - authenticated users can read their own,
+    // writes handled by Cloud Functions
+    match /ParkingTickets/{ticketId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    // Barrier status - any authenticated user can read
+    match /Barrier/{barrierId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    // Pending entry/exit - authenticated users can read/write
+    match /PendingEntry/{docId} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /PendingExit/{docId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // System settings (parking lights etc.) - any authenticated user
+    match /Parking/{docId} {
+      allow read, write: if request.auth != null;
     }
   }
 }

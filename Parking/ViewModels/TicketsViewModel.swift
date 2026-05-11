@@ -12,6 +12,7 @@ class TicketsViewModel: ObservableObject {
     private var listener: ListenerRegistration?
     
     func startListening(userId: String) {
+        guard listener == nil else { return }
         isLoading = true
         print("🎫 [TicketsViewModel] Starting to listen for userId: \(userId)")
         

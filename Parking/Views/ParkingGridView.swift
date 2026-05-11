@@ -39,9 +39,6 @@ struct ParkingGridView: View {
             .onAppear {
                 viewModel.startListening()
             }
-            .onDisappear {
-                viewModel.stopListening()
-            }
         }
     }
     

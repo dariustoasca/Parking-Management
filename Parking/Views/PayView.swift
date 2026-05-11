@@ -167,7 +167,7 @@ struct PayView: View {
                                         .foregroundColor(.secondary)
                                     
                                     TextField("John Doe", text: $cardHolderName)
-                                        .autocapitalization(.words)
+                                        .textInputAutocapitalization(.words)
                                         .padding()
                                         .background(Color(.systemGray6))
                                         .cornerRadius(10)

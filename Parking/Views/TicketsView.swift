@@ -87,9 +87,6 @@ struct TicketsView: View {
                     viewModel.startListening(userId: userId)
                 }
             }
-            .onDisappear {
-                viewModel.stopListening()
-            }
         }
     }
 }

@@ -11,6 +11,7 @@ class ParkingGridViewModel: ObservableObject {
     private var listener: ListenerRegistration?
     
     func startListening() {
+        guard listener == nil else { return }
         isLoading = true
         listener = db.collection("ParkingSpots")
             .order(by: "number")

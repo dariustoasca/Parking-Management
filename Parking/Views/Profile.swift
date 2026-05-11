@@ -304,6 +304,7 @@ struct ProfileView: View {
                             .foregroundColor(.secondary)
                     }
                     .padding()
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -902,6 +903,7 @@ struct GradientPickerSheet: View {
                                     .cornerRadius(16)
                                     .shadow(color: shadowColor, radius: 5, x: 0, y: 2)
                                 }
+                                .buttonStyle(.plain)
                             }
                         }
                         .padding(.horizontal)
@@ -988,6 +990,7 @@ struct SettingsButtonRow: View {
                     .foregroundColor(.secondary)
             }
             .padding()
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }

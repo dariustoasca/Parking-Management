@@ -166,7 +166,7 @@ struct HomeView: View {
                                                 .font(.headline)
                                                 .fontWeight(.bold)
                                                 .foregroundColor(.primary)
-                                            Text("\(viewModel.entryRemainingTime)s - Press barrier button")
+                                            Text("\(viewModel.entryRemainingTime)s - Stand In Front Of The Barrier")
                                                 .font(.caption)
                                                 .foregroundColor(.secondary)
                                         } else {
@@ -283,7 +283,7 @@ struct HomeView: View {
                                                 .font(.headline)
                                                 .fontWeight(.bold)
                                                 .foregroundColor(.primary)
-                                            Text("\(viewModel.exitRemainingTime)s - Press barrier button")
+                                            Text("\(viewModel.exitRemainingTime)s - Stand In Front Of The Barrier")
                                                 .font(.caption)
                                                 .foregroundColor(.secondary)
                                         } else {
@@ -368,9 +368,6 @@ struct HomeView: View {
                 if let userId = authManager.currentUserUID {
                     viewModel.startListening(userId: userId)
                 }
-            }
-            .onDisappear {
-                viewModel.stopListening()
             }
         }
     }

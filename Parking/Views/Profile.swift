@@ -92,11 +92,9 @@ struct ProfileView: View {
             if let userId = authManager.currentUserUID {
                 profilePicManager.startListeningToProfile(userId: userId)
             }
-            startListeningToLights()
-        }
-        .onDisappear {
-            profilePicManager.stopListening()
-            lightsListener?.remove()
+            if lightsListener == nil {
+                startListeningToLights()
+            }
         }
     }
     
@@ -1373,7 +1371,7 @@ struct PaymentMethodsView: View {
                         .foregroundColor(.secondary)
                     
                     TextField("John Doe", text: $cardHolderName)
-                        .autocapitalization(.words)
+                        .textInputAutocapitalization(.words)
                         .padding()
                         .background(Color(.systemGray6))
                         .cornerRadius(10)

@@ -140,15 +140,17 @@ class HomeViewModel: ObservableObject {
         spotsListener = db.collection("ParkingSpots")
             .whereField("occupied", isEqualTo: true)
             .addSnapshotListener { [weak self] snapshot, error in
-                guard let self = self else { return }
-                if let error = error {
-                    print("Error listening to spots: \(error)")
-                    return
+                Task { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    if let error = error {
+                        print("Error listening to spots: \(error)")
+                        return
+                    }
+                    
+                    self.occupiedSpots = snapshot?.documents.compactMap { doc in
+                        try? doc.data(as: ParkingSpot.self)
+                    } ?? []
                 }
-                
-                self.occupiedSpots = snapshot?.documents.compactMap { doc in
-                    try? doc.data(as: ParkingSpot.self)
-                } ?? []
             }
     }
     
@@ -161,32 +163,35 @@ class HomeViewModel: ObservableObject {
             .whereField("status", isEqualTo: "active")
             .limit(to: 1)
             .addSnapshotListener { [weak self] snapshot, error in
-                guard let self = self else { return }
-                if let error = error {
-                    print("Error listening to tickets: \(error)")
-                    return
-                }
-                
-                if let document = snapshot?.documents.first {
-                    do {
-                        self.activeTicket = try document.data(as: ParkingTicket.self)
-                        
-                        // Entry was successful if we were waiting and got a ticket
-                        if self.isPendingEntry {
-                            self.isPendingEntry = false
-                            self.entrySuccess = true
-                            self.entryTimer?.invalidate()
-                            
-                            // Hide success message after 5 seconds
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                                self.entrySuccess = false
-                            }
-                        }
-                    } catch {
-                        print("Error decoding ticket: \(error)")
+                Task { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    if let error = error {
+                        print("Error listening to tickets: \(error)")
+                        return
                     }
-                } else {
-                    self.activeTicket = nil
+                    
+                    if let document = snapshot?.documents.first {
+                        do {
+                            self.activeTicket = try document.data(as: ParkingTicket.self)
+                            
+                            // Entry was successful if we were waiting and got a ticket
+                            if self.isPendingEntry {
+                                self.isPendingEntry = false
+                                self.entrySuccess = true
+                                self.entryTimer?.invalidate()
+                                
+                                // Hide success message after 5 seconds
+                                Task { @MainActor [weak self] in
+                                    try? await Task.sleep(nanoseconds: 5_000_000_000)
+                                    self?.entrySuccess = false
+                                }
+                            }
+                        } catch {
+                            print("Error decoding ticket: \(error)")
+                        }
+                    } else {
+                        self.activeTicket = nil
+                    }
                 }
             }
     }
@@ -197,21 +202,23 @@ class HomeViewModel: ObservableObject {
     private func listenToPendingEntry(userId: String) {
         pendingEntryListener = db.collection("PendingEntry").document("current")
             .addSnapshotListener { [weak self] snapshot, error in
-                guard let self = self else { return }
-                
-                if let data = snapshot?.data(),
-                   let pendingUserId = data["pendingUserId"] as? String,
-                   pendingUserId == userId {
-                    // We have a pending entry
-                    if !self.isPendingEntry {
-                        self.isPendingEntry = true
-                        self.startEntryTimer()
-                    }
-                } else {
-                    // No pending entry for us
-                    if self.isPendingEntry && self.activeTicket == nil {
-                        self.isPendingEntry = false
-                        self.entryTimer?.invalidate()
+                Task { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    
+                    if let data = snapshot?.data(),
+                       let pendingUserId = data["pendingUserId"] as? String,
+                       pendingUserId == userId {
+                        // We have a pending entry
+                        if !self.isPendingEntry {
+                            self.isPendingEntry = true
+                            self.startEntryTimer()
+                        }
+                    } else {
+                        // No pending entry for us
+                        if self.isPendingEntry && self.activeTicket == nil {
+                            self.isPendingEntry = false
+                            self.entryTimer?.invalidate()
+                        }
                     }
                 }
             }
@@ -227,43 +234,45 @@ class HomeViewModel: ObservableObject {
             .whereField("status", isEqualTo: "paid")
             .limit(to: 1)
             .addSnapshotListener { [weak self] snapshot, error in
-                guard let self = self else { return }
-                if let error = error {
-                    print("Error listening to paid tickets: \(error)")
-                    return
-                }
-                
-                if let document = snapshot?.documents.first {
-                    do {
-                        let ticket = try document.data(as: ParkingTicket.self)
-                        
-                        if let paidAt = document.data()["paidAt"] as? Timestamp {
-                            let paidAtDate = paidAt.dateValue()
-                            let fifteenMinutesAgo = Date().addingTimeInterval(-15 * 60)
-                            
-                            if paidAtDate > fifteenMinutesAgo {
-                                var updatedTicket = ticket
-                                updatedTicket.endTime = paidAtDate
-                                self.recentlyPaidTicket = updatedTicket
-                                self.updateRemainingTime()
-                            } else {
-                                // Ticket expired - mark as expired in database
-                                self.db.collection("ParkingTickets").document(document.documentID).updateData([
-                                    "status": "expired"
-                                ])
-                                self.recentlyPaidTicket = nil
-                                self.remainingTime = 0
-                            }
-                        } else {
-                            self.recentlyPaidTicket = ticket
-                            self.updateRemainingTime()
-                        }
-                    } catch {
-                        print("Error decoding paid ticket: \(error)")
+                Task { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    if let error = error {
+                        print("Error listening to paid tickets: \(error)")
+                        return
                     }
-                } else {
-                    self.recentlyPaidTicket = nil
-                    self.remainingTime = 0
+                    
+                    if let document = snapshot?.documents.first {
+                        do {
+                            let ticket = try document.data(as: ParkingTicket.self)
+                            
+                            if let paidAt = document.data()["paidAt"] as? Timestamp {
+                                let paidAtDate = paidAt.dateValue()
+                                let fifteenMinutesAgo = Date().addingTimeInterval(-15 * 60)
+                                
+                                if paidAtDate > fifteenMinutesAgo {
+                                    var updatedTicket = ticket
+                                    updatedTicket.endTime = paidAtDate
+                                    self.recentlyPaidTicket = updatedTicket
+                                    self.updateRemainingTime()
+                                } else {
+                                    // Ticket expired - mark as expired in database
+                                    self.db.collection("ParkingTickets").document(document.documentID).updateData([
+                                        "status": "expired"
+                                    ])
+                                    self.recentlyPaidTicket = nil
+                                    self.remainingTime = 0
+                                }
+                            } else {
+                                self.recentlyPaidTicket = ticket
+                                self.updateRemainingTime()
+                            }
+                        } catch {
+                            print("Error decoding paid ticket: \(error)")
+                        }
+                    } else {
+                        self.recentlyPaidTicket = nil
+                        self.remainingTime = 0
+                    }
                 }
             }
     }
@@ -271,9 +280,9 @@ class HomeViewModel: ObservableObject {
     // Fetches user's display name for greeting
     private func fetchUserName(userId: String) {
         db.collection("Users").document(userId).getDocument { [weak self] snapshot, error in
-            guard let self = self else { return }
-            if let data = snapshot?.data(), let name = data["displayName"] as? String {
-                Task { @MainActor in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                if let data = snapshot?.data(), let name = data["displayName"] as? String {
                     self.userName = name
                 }
             }
@@ -370,19 +379,20 @@ class HomeViewModel: ObservableObject {
         exitBarrierListener?.remove()
         exitBarrierListener = db.collection("Barrier").document("exitBarrier")
             .addSnapshotListener { [weak self] snapshot, error in
-                guard let self = self else { return }
-                
-                if let isOpen = snapshot?.data()?["isOpen"] as? Bool, isOpen {
-                    Task { @MainActor in
+                Task { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    
+                    if let isOpen = snapshot?.data()?["isOpen"] as? Bool, isOpen {
                         self.isPendingExit = false
                         self.exitTimer?.invalidate()
                         self.barrierSuccess = true
                         self.exitBarrierListener?.remove()
                         
                         // Hide success and clear ticket after 10 seconds
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
-                            self.recentlyPaidTicket = nil
-                            self.barrierSuccess = false
+                        Task { @MainActor [weak self] in
+                            try? await Task.sleep(nanoseconds: 10_000_000_000)
+                            self?.recentlyPaidTicket = nil
+                            self?.barrierSuccess = false
                         }
                     }
                 }

@@ -59,7 +59,7 @@ struct LoginView: View {
                                 Image(systemName: "person.fill")
                                     .foregroundColor(.gray)
                                 TextField("Full Name", text: $displayName)
-                                    .autocapitalization(.words)
+                                    .textInputAutocapitalization(.words)
                             }
                             .padding()
                             .background(Color(.systemBackground))
@@ -73,7 +73,7 @@ struct LoginView: View {
                                 .foregroundColor(.gray)
                             TextField("Email", text: $email)
                                 .keyboardType(.emailAddress)
-                                .autocapitalization(.none)
+                                .textInputAutocapitalization(.never)
                         }
                         .padding()
                         .background(Color(.systemBackground))
@@ -249,7 +249,7 @@ struct ResetPasswordView: View {
                 
                 TextField("Email", text: $email)
                     .keyboardType(.emailAddress)
-                    .autocapitalization(.none)
+                    .textInputAutocapitalization(.never)
                     .padding()
                     .background(Color(.systemGray6))
                     .cornerRadius(10)

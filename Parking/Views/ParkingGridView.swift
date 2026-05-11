@@ -167,12 +167,15 @@ struct ParkingGridView: View {
             
             // Row 3: Spot 5 (centered)
             if spots.count >= 5 {
-                HStack {
-                    Spacer()
-                    LiquidGlassSpotCard(spot: spots[4])
-                        .frame(maxWidth: UIScreen.main.bounds.width / 2 - 24)
-                    Spacer()
+                GeometryReader { geometry in
+                    HStack {
+                        Spacer()
+                        LiquidGlassSpotCard(spot: spots[4])
+                            .frame(maxWidth: geometry.size.width / 2 - 8)
+                        Spacer()
+                    }
                 }
+                .frame(height: 170)
             }
         }
     }

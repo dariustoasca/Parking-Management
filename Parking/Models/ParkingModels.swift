@@ -19,7 +19,7 @@ import FirebaseFirestore
 // MARK: - Parking Ticket
 // Represents a single parking session from entry to exit
 
-struct ParkingTicket: Identifiable, Codable {
+struct ParkingTicket: Identifiable, Codable, Sendable {
     @DocumentID var id: String?  // Firestore document ID (e.g., TKT-2025-123)
     let userId: String
     let spotId: String
@@ -44,7 +44,7 @@ struct ParkingTicket: Identifiable, Codable {
 // MARK: - Barrier
 // Represents the physical entry/exit barriers controlled by Raspberry Pi
 
-struct Barrier: Identifiable, Codable {
+struct Barrier: Identifiable, Codable, Sendable {
     @DocumentID var id: String?
     var isOpen: Bool
     let name: String  // "enterBarrier" or "exitBarrier"
@@ -59,7 +59,7 @@ struct Barrier: Identifiable, Codable {
 // MARK: - Parking Spot
 // Represents one of the 5 physical parking spaces in the lot
 
-struct ParkingSpot: Identifiable, Codable {
+struct ParkingSpot: Identifiable, Codable, Sendable {
     @DocumentID var id: String?
     let number: Int
     var section: String?  // legacy field, no longer used
@@ -90,7 +90,7 @@ struct ParkingSpot: Identifiable, Codable {
 // Stores saved credit card info. For security, only the last 4 digits are saved.
 // Full card numbers are never stored in our database.
 
-struct PaymentCard: Identifiable, Codable {
+struct PaymentCard: Identifiable, Codable, Sendable {
     @DocumentID var id: String?
     let userId: String
     let last4Digits: String

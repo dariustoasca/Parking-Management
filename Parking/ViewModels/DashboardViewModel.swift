@@ -58,6 +58,10 @@ class DashboardViewModel: ObservableObject {
     }
     
     func loadDashboardData(userUID: String) {
+        guard currentUserUID != userUID || listeners.isEmpty else { return }
+        // Remove old listeners if switching users
+        listeners.forEach { $0.remove() }
+        listeners.removeAll()
         self.currentUserUID = userUID
         startMessagesListener()
         // Add other listeners if needed for the profile stats
